@@ -1,0 +1,69 @@
+name: Auto-Update NVDA Alert Levels (AI Analysis)
+
+# Fetches NVDA news from Finnhub, analyzes with Claude AI,
+# updates config/nvda_alert_levels.json, and commits back to repo.
+# Runs 1h BEFORE the reminder workflow so Discord receives fresh levels.
+#
+# Triggers:
+#   - Weekly: Sunday 12:00 UTC = 19:00 TH
+#   - Pre-Computex: June 1 (day before Computex June 2)
+#   - Pre-Earnings: August 25 (day before NVDA earnings Aug 26)
+#   - Manual dispatch (with optional dry-run)
+
+on:
+  schedule:
+    - cron: '0 12 * * 0' # weekly Sunday
+    - cron: '0 12 1 6 *' # pre-Computex
+    - cron: '0 12 25 8 *' # pre-Earnings
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (print only, no commit)'
+        required: false
+        default: 'false'
+        type: choice
+        options: ['false', 'true']
+
+permissions:
+  contents: write # allow git push back to repo
+
+jobs:
+  analyze-and-update:
+    name: AI analysis → update config → commit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+
+      - name: Install dependencies
+        run: pip install openai requests
+
+      - name: Run AI analysis
+        env:
+          FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DISCORD_ANALYSIS_WEBHOOK_URL: ${{ secrets.DISCORD_ANALYSIS_WEBHOOK_URL }}
+        run: |
+          ARGS=""
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            ARGS="--dry-run"
+          fi
+          python3 scripts/auto_analyze_and_update.py $ARGS
+
+      - name: Commit updated config
+        if: github.event.inputs.dry_run != 'true'
+        run: |
+          git config user.name "nvda-alert-bot[bot]"
+          git config user.email "nvda-alert-bot@users.noreply.github.com"
+          git diff --quiet config/nvda_alert_levels.json || (
+            git add config/nvda_alert_levels.json &&
+            git commit -m "auto: update NVDA alert levels $(date -u +%Y-%m-%d)" &&
+            git push
+          )
+          echo "Config commit step complete (no diff = already up to date)"

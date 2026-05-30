@@ -1,0 +1,68 @@
+{
+	"last_updated": "2026-05-31",
+	"updated_by": "manual",
+	"ticker": "NVDA",
+	"price_at_update": 211.14,
+	"analysis_summary": "NVDA ราคา $211 อยู่กลางอากาศ ไม่ใช่ support ไม่ใช่ breakout. Computex June 2 เป็น catalyst สำคัญที่อาจดัน breakout. Stop-loss ที่ $198.50 ให้ R/R = 2.7:1.",
+	"pro_trader_notes": {
+		"current_setup": "ราคาอยู่กลางอากาศ ยังไม่มี setup ที่ชัดเจน — ไม่ซื้อตรงนี้",
+		"action_now": "รอดู 2 scenario: (A) ร่วงลง $205-208 แล้วค่อยเข้า หรือ (B) ทะลุ $217.86 พร้อม volume สูง",
+		"watch_for": "Day High $217.86 ถ้าทะลุพร้อม volume > avg → breakout entry | $208 ถ้าร่วงลงมา → buy zone",
+		"avoid": "อย่า FOMO ซื้อตอนนี้, อย่าซื้อวัน keynote Computex ถ้าราคาพุ่งแล้ว, อย่า average down ถ้า stop hit",
+		"catalyst_note": "Computex 2026 เริ่ม June 2 — ระวัง buy rumour sell news. รอ reaction หลัง keynote 1-2 วันก่อนตัดสินใจ",
+		"risk_rule": "Max risk 2% of port (~200 THB) | ถ้าขาดทุน 3 ครั้งติดกัน หยุด 1 สัปดาห์ | take profit 50% ที่ T1 แล้ว rotate"
+	},
+	"levels": [
+		{
+			"price": 218.0,
+			"direction": "above",
+			"label": "🚀 BREAKOUT — Day High Cleared",
+			"message": "NVDA ทะลุ $218 — ผ่าน Day High!\nรอ volume confirm แล้วเข้า Zone B",
+			"color": "0x00BFFF"
+		},
+		{
+			"price": 208.0,
+			"direction": "below",
+			"label": "🟢 BUY ZONE A",
+			"message": "NVDA แตะ $208 — เข้า Zone A (Pullback)\nEntry: $205-208 | Stop: $198.50 | Target 1: $222",
+			"color": "0x00FF00"
+		},
+		{
+			"price": 205.0,
+			"direction": "below",
+			"label": "🟢 BUY ZONE A (DEEP)",
+			"message": "NVDA แตะ $205 — ใจกลาง Zone A!\nEntry แนะนำ: ตอนนี้เลย | Stop: $198.50 | R/R = 2.7:1",
+			"color": "0x00CC00"
+		},
+		{
+			"price": 198.5,
+			"direction": "below",
+			"label": "🔴 STOP-LOSS ถูกทดสอบ",
+			"message": "NVDA ลงใต้ $198.50 ⚠️\nถ้าถืออยู่: ตัดขาดทุนทันที อย่ารอ",
+			"color": "0xFF0000"
+		},
+		{
+			"price": 222.0,
+			"direction": "above",
+			"label": "🟡 TARGET 1 (+5%)",
+			"message": "NVDA แตะ $222 — TARGET 1!\nขาย 50% เพื่อ lock กำไร | ย้าย stop → $208",
+			"color": "0xFFFF00"
+		},
+		{
+			"price": 236.0,
+			"direction": "above",
+			"label": "🎯 TARGET 2 — 52W HIGH (+12%)",
+			"message": "NVDA แตะ $236 — 52-Week High Zone!\nขายที่เหลือทั้งหมด หรือ trailing stop ที่ $225",
+			"color": "0xFF8800"
+		}
+	],
+	"upcoming_events": [
+		{
+			"date": "2026-06-02",
+			"event": "🖥️ Computex 2026 เริ่ม (Jensen Huang keynote)"
+		},
+		{ "date": "2026-06-04", "event": "💰 NVDA Ex-Dividend Date ($0.25/share)" },
+		{ "date": "2026-06-06", "event": "🖥️ Computex 2026 สิ้นสุด" },
+		{ "date": "2026-08-26", "event": "📊 NVDA Earnings Q2 FY27" }
+	]
+}

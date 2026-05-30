@@ -1,0 +1,102 @@
+name: NVDA Alert Review Reminders
+
+# Sends Discord reminders telling you WHEN to open Claude and update alert levels.
+#
+# Schedule:
+#   - Every Sunday 20:00 TH (13:00 UTC) → Weekly review before Monday open
+#   - Day before known catalysts (Computex, Earnings) → Pre-catalyst review
+
+on:
+  schedule:
+    # Weekly: every Sunday 13:00 UTC = 20:00 TH
+    - cron: '0 13 * * 0'
+
+    # Pre-Computex: June 1 (Monday before Computex June 2) 13:00 UTC
+    - cron: '0 13 1 6 *'
+
+    # Pre-Earnings: August 25 (day before NVDA earnings Aug 26) 13:00 UTC
+    - cron: '0 13 25 8 *'
+
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reminder reason'
+        required: false
+        default: 'manual'
+        type: choice
+        options:
+          - weekly
+          - pre_catalyst
+          - post_move
+          - earnings
+          - manual
+      detail:
+        description: 'Optional detail message'
+        required: false
+        default: ''
+
+jobs:
+  weekly-reminder:
+    name: Weekly review reminder
+    if: github.event_name == 'schedule' && github.event.schedule == '0 13 * * 0'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - run: pip install requests
+      - name: Send weekly reminder
+        env:
+          DISCORD_NVDA_ALERT_WEBHOOK: ${{ secrets.DISCORD_NVDA_ALERT_WEBHOOK }}
+        run: python3 scripts/send_review_reminder.py --reason weekly
+
+  pre-computex-reminder:
+    name: Pre-Computex reminder
+    if: github.event_name == 'schedule' && github.event.schedule == '0 13 1 6 *'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - run: pip install requests
+      - name: Send pre-catalyst reminder
+        env:
+          DISCORD_NVDA_ALERT_WEBHOOK: ${{ secrets.DISCORD_NVDA_ALERT_WEBHOOK }}
+        run: |
+          python3 scripts/send_review_reminder.py \
+            --reason pre_catalyst \
+            --detail "Computex 2026 เริ่มพรุ่งนี้ (June 2) — Jensen Huang keynote อาจทำราคาผันผวน ปรับ levels ก่อน"
+
+  pre-earnings-reminder:
+    name: Pre-Earnings reminder
+    if: github.event_name == 'schedule' && github.event.schedule == '0 13 25 8 *'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - run: pip install requests
+      - name: Send earnings reminder
+        env:
+          DISCORD_NVDA_ALERT_WEBHOOK: ${{ secrets.DISCORD_NVDA_ALERT_WEBHOOK }}
+        run: |
+          python3 scripts/send_review_reminder.py \
+            --reason earnings \
+            --detail "NVDA Earnings Q2 FY27 พรุ่งนี้ (Aug 26) — พิจารณา reduce position หรือขยับ stop ก่อน"
+
+  manual:
+    name: Manual reminder
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - run: pip install requests
+      - name: Send manual reminder
+        env:
+          DISCORD_NVDA_ALERT_WEBHOOK: ${{ secrets.DISCORD_NVDA_ALERT_WEBHOOK }}
+        run: |
+          python3 scripts/send_review_reminder.py \
+            --reason "${{ github.event.inputs.reason }}" \
+            --detail "${{ github.event.inputs.detail }}"
