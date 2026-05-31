@@ -1,24 +1,39 @@
-name: NVDA Alert Levels — Notify & Manual Dispatch
+name: Stock Alert Levels — Notify & Manual Dispatch
 
 # AI analysis pipeline is PAUSED — analysis is now done manually on local.
 #
+# Supported tickers: NVDA, SMCI
+#
 # Triggers:
-#   - push to config/nvda_alert_levels.json on main → publish updated levels to Discord
+#   - push to config/nvda_alert_levels.json → publish NVDA levels to Discord
+#   - push to config/smci_alert_levels.json → publish SMCI levels to Discord
 #   - workflow_dispatch → re-run AI analysis manually (dry-run supported)
 #
 # Local analysis command:
-#   python3 scripts/auto_analyze_and_update.py \
+#   # NVDA
+#   python3 scripts/auto_analyze_and_update.py --ticker NVDA \
 #     --finnhub-key $FINNHUB_API_KEY \
 #     --analysis-webhook $DISCORD_ANALYSIS_WEBHOOK_URL
-#   Then: git add config/nvda_alert_levels.json && git commit -m "manual: update NVDA levels" && git push
+#   # SMCI
+#   python3 scripts/auto_analyze_and_update.py --ticker SMCI \
+#     --finnhub-key $FINNHUB_API_KEY \
+#     --analysis-webhook $DISCORD_SMCI_ALERT_WEBHOOK
+#   Then: git add config/<ticker>_alert_levels.json && git commit -m "manual: update levels" && git push
 
 on:
   push:
     branches: [main]
     paths:
       - 'config/nvda_alert_levels.json'
+      - 'config/smci_alert_levels.json'
   workflow_dispatch:
     inputs:
+      ticker:
+        description: 'Stock ticker to analyze'
+        required: false
+        default: 'NVDA'
+        type: choice
+        options: ['NVDA', 'SMCI']
       dry_run:
         description: 'Dry run (print only, no commit)'
         required: false
@@ -31,37 +46,57 @@ on:
 #   schedule:
 #     - cron: '0 12 * * 0'   # weekly Sunday 12:00 UTC = 19:00 TH
 #     - cron: '0 21 * * 1-5' # weekday post-market (gated ≥4% move)
-#     - cron: '0 12 1 6 *'   # pre-Computex June 1
-#     - cron: '0 12 25 8 *'  # pre-Earnings August 25
 
 permissions:
   contents: write # allow git push back to repo
   models: read # allow GitHub Models API access via GITHUB_TOKEN
 
 jobs:
-  # ── Job 1: publish Discord on push OR manual dispatch ────────────────────────
-  notify-on-push:
-    name: Publish updated levels to Discord
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+  # ── Job 1a: publish NVDA levels to Discord ────────────────────────────────────
+  notify-nvda:
+    name: Publish NVDA levels to Discord
+    if: |
+      github.event_name == 'workflow_dispatch' && github.event.inputs.ticker == 'NVDA' ||
+      github.event_name == 'push' && contains(github.event.head_commit.modified, 'config/nvda_alert_levels.json')
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with: { python-version: '3.11' }
-
       - name: Install dependencies
         run: pip install "openai>=1.0,<2" requests
-
-      - name: Send updated levels to Discord
+      - name: Send NVDA levels to Discord
         env:
+          TICKER: NVDA
           DISCORD_NVDA_ALERT_WEBHOOK: ${{ secrets.DISCORD_NVDA_ALERT_WEBHOOK }}
           DISCORD_ANALYSIS_WEBHOOK_URL: ${{ secrets.DISCORD_ANALYSIS_WEBHOOK_URL }}
-        run: python3 scripts/auto_analyze_and_update.py --notify-only
+        run: python3 scripts/auto_analyze_and_update.py --ticker NVDA --notify-only
 
-  # ── Job 2: manual AI analysis via workflow_dispatch (skipped on push) ────────
+  # ── Job 1b: publish SMCI levels to Discord ────────────────────────────────────
+  notify-smci:
+    name: Publish SMCI levels to Discord
+    if: |
+      github.event_name == 'workflow_dispatch' && github.event.inputs.ticker == 'SMCI' ||
+      github.event_name == 'push' && contains(github.event.head_commit.modified, 'config/smci_alert_levels.json')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - name: Install dependencies
+        run: pip install "openai>=1.0,<2" requests
+      - name: Send SMCI levels to Discord
+        env:
+          TICKER: SMCI
+          DISCORD_SMCI_ALERT_WEBHOOK: ${{ secrets.DISCORD_SMCI_ALERT_WEBHOOK }}
+          DISCORD_ANALYSIS_WEBHOOK_URL: ${{ secrets.DISCORD_ANALYSIS_WEBHOOK_URL }}
+        run: python3 scripts/auto_analyze_and_update.py --ticker SMCI --notify-only
+
+  # ── Job 2: manual AI analysis via workflow_dispatch ───────────────────────────
   analyze-and-update:
     name: AI analysis → update config → commit  (manual dispatch only)
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run != 'true'
@@ -84,22 +119,22 @@ jobs:
           FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DISCORD_NVDA_ALERT_WEBHOOK: ${{ secrets.DISCORD_NVDA_ALERT_WEBHOOK }}
+          DISCORD_SMCI_ALERT_WEBHOOK: ${{ secrets.DISCORD_SMCI_ALERT_WEBHOOK }}
           DISCORD_ANALYSIS_WEBHOOK_URL: ${{ secrets.DISCORD_ANALYSIS_WEBHOOK_URL }}
         run: |
-          ARGS=""
-          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
-            ARGS="--dry-run"
-          fi
-          python3 scripts/auto_analyze_and_update.py $ARGS
+          TICKER="${{ github.event.inputs.ticker || 'NVDA' }}"
+          python3 scripts/auto_analyze_and_update.py --ticker "$TICKER"
 
       - name: Commit updated config
-        if: github.event.inputs.dry_run != 'true'
         run: |
-          git config user.name "nvda-alert-bot[bot]"
-          git config user.email "nvda-alert-bot@users.noreply.github.com"
-          git diff --quiet config/nvda_alert_levels.json || (
-            git add config/nvda_alert_levels.json &&
-            git commit -m "auto: update NVDA alert levels $(date -u +%Y-%m-%d)" &&
+          TICKER="${{ github.event.inputs.ticker || 'NVDA' }}"
+          CONFIG="config/${TICKER,,}_alert_levels.json"
+          git config user.name "alert-bot[bot]"
+          git config user.email "alert-bot@users.noreply.github.com"
+          git diff --quiet "$CONFIG" || (
+            git add "$CONFIG" &&
+            git commit -m "auto: update ${TICKER} alert levels $(date -u +%Y-%m-%d)" &&
             git push
           )
-          echo "Config commit step complete (no diff = already up to date)"
+          echo "Config commit step complete"
+

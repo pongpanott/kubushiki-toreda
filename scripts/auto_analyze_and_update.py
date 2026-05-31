@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
 """
-Auto-analyze NVDA market conditions using Finnhub news + Claude Sonnet via GitHub Models,
-then update config/nvda_alert_levels.json and notify Discord analysis channel.
+Auto-analyze a stock using Finnhub news + Claude Sonnet via GitHub Models,
+then update the config JSON and notify a Discord analysis channel.
 
 Usage:
-    python3 scripts/auto_analyze_and_update.py
-    python3 scripts/auto_analyze_and_update.py --dry-run   # print only, no save/send
+    python3 scripts/auto_analyze_and_update.py                        # NVDA (default)
+    python3 scripts/auto_analyze_and_update.py --ticker SMCI          # SMCI
+    python3 scripts/auto_analyze_and_update.py --dry-run              # print only, no save/send
+    python3 scripts/auto_analyze_and_update.py --notify-only          # send existing config to Discord
 
 Secrets (env vars or CLI args):
     FINNHUB_API_KEY               Finnhub API key
     GITHUB_TOKEN                  Auto-provided in GitHub Actions (no extra secret needed)
-    DISCORD_ANALYSIS_WEBHOOK_URL  Discord webhook for analysis channel
+    DISCORD_NVDA_ALERT_WEBHOOK    Discord webhook for NVDA alerts
+    DISCORD_ANALYSIS_WEBHOOK_URL  Fallback Discord webhook
 """
 
 import argparse
@@ -23,13 +26,15 @@ from pathlib import Path
 import requests
 from openai import OpenAI
 
-CONFIG_PATH = Path(__file__).parent.parent / "config" / "nvda_alert_levels.json"
 FINNHUB_BASE = "https://finnhub.io/api/v1"
-TICKER = "NVDA"
 NEWS_DAYS = 5
 # GitHub Models endpoint — uses GITHUB_TOKEN, no separate API key required
 GITHUB_MODELS_ENDPOINT = os.environ.get("GITHUB_MODELS_ENDPOINT", "https://models.inference.ai.azure.com")
 CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6")
+
+# Resolved at runtime from --ticker / --config-path args
+TICKER: str = "NVDA"
+CONFIG_PATH: Path = Path(__file__).parent.parent / "config" / "nvda_alert_levels.json"
 
 
 # ---------------------------------------------------------------------------
@@ -230,7 +235,7 @@ def send_analysis_discord(webhook_url: str, analysis: dict, price: float) -> Non
 
     # ── Embed 1 — Market Pulse ─────────────────────────────────────────────
     embed1 = {
-        "title": "📡  NVDA — Market Pulse",
+        "title": f"📡  {TICKER} — Market Pulse",
         "description": analysis.get("analysis_summary", "—"),
         "color": 0x5865F2,
         "fields": [
@@ -331,7 +336,19 @@ def send_analysis_discord(webhook_url: str, analysis: dict, price: float) -> Non
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Auto-analyze NVDA and update alert levels")
+    global TICKER, CONFIG_PATH
+
+    parser = argparse.ArgumentParser(description="Auto-analyze a stock and update alert levels")
+    parser.add_argument(
+        "--ticker",
+        default=os.environ.get("TICKER", "NVDA"),
+        help="Stock ticker symbol (default: NVDA)",
+    )
+    parser.add_argument(
+        "--config-path",
+        default="",
+        help="Path to config JSON (default: config/<ticker>_alert_levels.json)",
+    )
     parser.add_argument("--finnhub-key", default=os.environ.get("FINNHUB_API_KEY", ""))
     parser.add_argument(
         "--github-token",
@@ -340,11 +357,8 @@ def main() -> None:
     )
     parser.add_argument(
         "--analysis-webhook",
-        default=(
-            os.environ.get("DISCORD_NVDA_ALERT_WEBHOOK")
-            or os.environ.get("DISCORD_ANALYSIS_WEBHOOK_URL", "")
-        ),
-        help="Discord webhook URL (DISCORD_NVDA_ALERT_WEBHOOK or DISCORD_ANALYSIS_WEBHOOK_URL)",
+        default="",  # resolved after --ticker is known; see below
+        help="Discord webhook URL override (env: DISCORD_<TICKER>_ALERT_WEBHOOK or DISCORD_ANALYSIS_WEBHOOK_URL)",
     )
     parser.add_argument(
         "--min-move-pct",
@@ -359,6 +373,22 @@ def main() -> None:
         help="Skip AI analysis — read existing config and send Discord notification only",
     )
     args = parser.parse_args()
+
+    # Resolve TICKER and CONFIG_PATH from args
+    TICKER = args.ticker.upper()
+    if args.config_path:
+        CONFIG_PATH = Path(args.config_path)
+    else:
+        CONFIG_PATH = Path(__file__).parent.parent / "config" / f"{TICKER.lower()}_alert_levels.json"
+
+    # Resolve webhook: explicit arg > ticker-specific env > generic fallback
+    webhook = (
+        args.analysis_webhook
+        or os.environ.get(f"DISCORD_{TICKER}_ALERT_WEBHOOK")
+        or os.environ.get("DISCORD_NVDA_ALERT_WEBHOOK")
+        or os.environ.get("DISCORD_ANALYSIS_WEBHOOK_URL", "")
+    )
+    args.analysis_webhook = webhook
 
     # ── notify-only mode: read existing config and send Discord ──────────────
     if args.notify_only:
