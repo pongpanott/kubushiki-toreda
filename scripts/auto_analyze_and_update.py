@@ -340,8 +340,11 @@ def main() -> None:
     )
     parser.add_argument(
         "--analysis-webhook",
-        default=os.environ.get("DISCORD_ANALYSIS_WEBHOOK_URL", ""),
-        help="Discord webhook for analysis channel (separate from price alerts)",
+        default=(
+            os.environ.get("DISCORD_NVDA_ALERT_WEBHOOK")
+            or os.environ.get("DISCORD_ANALYSIS_WEBHOOK_URL", "")
+        ),
+        help="Discord webhook URL (DISCORD_NVDA_ALERT_WEBHOOK or DISCORD_ANALYSIS_WEBHOOK_URL)",
     )
     parser.add_argument(
         "--min-move-pct",
@@ -368,7 +371,7 @@ def main() -> None:
         if args.analysis_webhook:
             send_analysis_discord(args.analysis_webhook, config, price)
         else:
-            print("⚠️  --analysis-webhook / DISCORD_ANALYSIS_WEBHOOK_URL not set — nothing to send")
+            print("⚠️  DISCORD_NVDA_ALERT_WEBHOOK / DISCORD_ANALYSIS_WEBHOOK_URL not set — nothing to send")
         raise SystemExit(0)
 
     missing = [name for name, val in [
@@ -436,7 +439,7 @@ def main() -> None:
         else:
             print("[DRY RUN] Would send Discord analysis message")
     else:
-        print("⚠️  DISCORD_ANALYSIS_WEBHOOK_URL not set — skipping Discord notification")
+        print("⚠️  DISCORD_NVDA_ALERT_WEBHOOK / DISCORD_ANALYSIS_WEBHOOK_URL not set — skipping Discord notification")
 
 
 if __name__ == "__main__":
