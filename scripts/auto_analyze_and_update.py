@@ -29,7 +29,7 @@ TICKER = "NVDA"
 NEWS_DAYS = 5
 # GitHub Models endpoint — uses GITHUB_TOKEN, no separate API key required
 GITHUB_MODELS_ENDPOINT = os.environ.get("GITHUB_MODELS_ENDPOINT", "https://models.inference.ai.azure.com")
-CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-5")
+CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6")
 
 
 # ---------------------------------------------------------------------------
