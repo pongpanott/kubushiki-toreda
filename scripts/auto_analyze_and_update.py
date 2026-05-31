@@ -350,7 +350,26 @@ def main() -> None:
         help="Skip AI analysis if price moved less than this %% from last config (0 = always run)",
     )
     parser.add_argument("--dry-run", action="store_true", help="Print result without saving or sending")
+    parser.add_argument(
+        "--notify-only",
+        action="store_true",
+        help="Skip AI analysis — read existing config and send Discord notification only",
+    )
     args = parser.parse_args()
+
+    # ── notify-only mode: read existing config and send Discord ──────────────
+    if args.notify_only:
+        if not CONFIG_PATH.exists():
+            print(f"❌ Config not found: {CONFIG_PATH}")
+            raise SystemExit(1)
+        config = json.loads(CONFIG_PATH.read_text())
+        price = float(config.get("price_at_update", 0))
+        print(f"📤 Notify-only mode — reading {CONFIG_PATH.name} (ref price ${price:.2f})")
+        if args.analysis_webhook:
+            send_analysis_discord(args.analysis_webhook, config, price)
+        else:
+            print("⚠️  --analysis-webhook / DISCORD_ANALYSIS_WEBHOOK_URL not set — nothing to send")
+        raise SystemExit(0)
 
     missing = [name for name, val in [
         ("FINNHUB_API_KEY", args.finnhub_key),
@@ -398,6 +417,7 @@ def main() -> None:
         "ticker": TICKER,
         "price_at_update": current_price,
         "analysis_summary": analysis.get("analysis_summary", ""),
+        "pro_trader_notes": analysis.get("pro_trader_notes", {}),
         "levels": analysis.get("levels", []),
         "upcoming_events": analysis.get("upcoming_events", []),
     }

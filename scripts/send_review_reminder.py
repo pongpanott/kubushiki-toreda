@@ -209,10 +209,14 @@ def send_reminder(webhook_url: str, reason: str, detail: str) -> None:
     )
     fields.append(
         {
-            "name": "🛠  วิธีอัปเดต",
+            "name": "🛠  วิธีอัปเดต (รันบน local)",
             "value": (
-                "เปิด Claude Code → พิมพ์:\n"
-                "> **\"วิเคราะห์ NVDA ตอนนี้ แนะนำ entry/stop/target ใหม่\"**"
+                "```\n"
+                "python3 scripts/auto_analyze_and_update.py \\\n"
+                "  --finnhub-key $FINNHUB_API_KEY \\\n"
+                "  --analysis-webhook $DISCORD_ANALYSIS_WEBHOOK_URL\n"
+                "```\n"
+                "แล้ว `git add config/nvda_alert_levels.json && git push`"
             ),
             "inline": False,
         }

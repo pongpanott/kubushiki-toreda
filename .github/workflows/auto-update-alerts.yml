@@ -1,24 +1,22 @@
-name: Auto-Update NVDA Alert Levels (AI Analysis)
+name: NVDA Alert Levels — Notify & Manual Dispatch
 
-# Fetches NVDA news from Finnhub, analyzes with Claude AI,
-# updates config/nvda_alert_levels.json, and commits back to repo.
-# Runs 1h BEFORE the reminder workflow so Discord receives fresh levels.
+# AI analysis pipeline is PAUSED — analysis is now done manually on local.
 #
 # Triggers:
-#   - Weekly: Sunday 12:00 UTC = 19:00 TH  (full reset)
-#   - Pre-Computex: June 1 / Pre-Earnings: August 25
-#   - Manual dispatch (with optional dry-run)
+#   - push to config/nvda_alert_levels.json on main → publish updated levels to Discord
+#   - workflow_dispatch → re-run AI analysis manually (dry-run supported)
 #
-# NOTE: Daily updates are intentionally omitted. Alert levels are weekly S/R
-# structures that don't change meaningfully each day. Use manual dispatch or
-# add a trigger when NVDA makes a genuinely large move (>4-5%).
+# Local analysis command:
+#   python3 scripts/auto_analyze_and_update.py \
+#     --finnhub-key $FINNHUB_API_KEY \
+#     --analysis-webhook $DISCORD_ANALYSIS_WEBHOOK_URL
+#   Then: git add config/nvda_alert_levels.json && git commit -m "manual: update NVDA levels" && git push
 
 on:
-  schedule:
-    - cron: '0 12 * * 0' # weekly Sunday 12:00 UTC = 19:00 TH (full reset, no gate)
-    - cron: '0 21 * * 1-5' # weekday post-market 21:00 UTC = 4 PM ET (gated ≥4% move)
-    - cron: '0 12 1 6 *' # pre-Computex June 1
-    - cron: '0 12 25 8 *' # pre-Earnings August 25
+  push:
+    branches: [main]
+    paths:
+      - 'config/nvda_alert_levels.json'
   workflow_dispatch:
     inputs:
       dry_run:
@@ -28,13 +26,44 @@ on:
         type: choice
         options: ['false', 'true']
 
+# Schedules are paused — uncomment to re-enable automated AI analysis:
+# on:
+#   schedule:
+#     - cron: '0 12 * * 0'   # weekly Sunday 12:00 UTC = 19:00 TH
+#     - cron: '0 21 * * 1-5' # weekday post-market (gated ≥4% move)
+#     - cron: '0 12 1 6 *'   # pre-Computex June 1
+#     - cron: '0 12 25 8 *'  # pre-Earnings August 25
+
 permissions:
   contents: write # allow git push back to repo
-  models: read # allow GitHub Models API (Claude Sonnet) access via GITHUB_TOKEN
+  models: read # allow GitHub Models API access via GITHUB_TOKEN
 
 jobs:
+  # ── Job 1: publish Discord when config is pushed manually ──────────────────
+  notify-on-push:
+    name: Publish updated levels to Discord
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+
+      - name: Install dependencies
+        run: pip install "openai>=1.0,<2" requests
+
+      - name: Send updated levels to Discord
+        env:
+          DISCORD_ANALYSIS_WEBHOOK_URL: ${{ secrets.DISCORD_ANALYSIS_WEBHOOK_URL }}
+        run: python3 scripts/auto_analyze_and_update.py --notify-only
+
+  # ── Job 2: manual AI analysis via workflow_dispatch ────────────────────────
   analyze-and-update:
-    name: AI analysis → update config → commit
+    name: AI analysis → update config → commit  (manual dispatch only)
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -49,109 +78,6 @@ jobs:
       - name: Install dependencies
         run: pip install "openai>=1.0,<2" requests
 
-      - name: Notify Discord — pipeline starting
-        env:
-          DISCORD_ANALYSIS_WEBHOOK_URL: ${{ secrets.DISCORD_ANALYSIS_WEBHOOK_URL }}
-        run: |
-          python3 - <<'EOF'
-          import os, requests, datetime
-          url = os.getenv("DISCORD_ANALYSIS_WEBHOOK_URL")
-          if not url:
-              print("DISCORD_ANALYSIS_WEBHOOK_URL not set — skipping start notification")
-              exit(0)
-          embed = {
-              "title": "\u2699\ufe0f NVDA Alert Update \u2014 Pipeline Starting",
-              "description": "Auto-analyze & update NVDA alert levels has started.",
-              "color": 0x3498DB,
-              "fields": [
-                  {"name": "Time (UTC)", "value": datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"), "inline": True},
-                  {"name": "Trigger", "value": os.getenv("GITHUB_EVENT_NAME", "unknown"), "inline": True},
-              ],
-              "footer": {"text": "claude-trading-skills / auto-update-alerts"},
-          }
-          resp = requests.post(url, json={"embeds": [embed]}, timeout=10)
-          resp.raise_for_status()
-          print("Start notification sent to Discord")
-          EOF
-
-      - name: Probe available Claude models
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          python3 - <<'EOF'
-          import os, urllib.request, urllib.error, json
-
-          token = os.environ["GITHUB_TOKEN"]
-
-          # 1. List all models
-          req = urllib.request.Request(
-              "https://models.inference.ai.azure.com/models",
-              headers={"Authorization": f"Bearer {token}"},
-          )
-          try:
-              with urllib.request.urlopen(req, timeout=10) as r:
-                  models = json.loads(r.read())
-              print("=== All models visible to Actions GITHUB_TOKEN ===")
-              found = [m for m in models if any(
-                  kw in (m.get("name","") + m.get("publisher","") + m.get("friendly_name","")).lower()
-                  for kw in ["claude", "anthropic"]
-              )]
-              if found:
-                  for m in found:
-                      print(f"  name={m.get('name')}  friendly={m.get('friendly_name')}  publisher={m.get('publisher')}")
-              else:
-                  print("  (no claude/anthropic models in catalog — printing first 20)")
-                  for m in models[:20]:
-                      print(f"  name={m.get('name')}  publisher={m.get('publisher')}")
-          except Exception as e:
-              print(f"  catalog error: {e}")
-
-          # 2. Try each candidate model name with a minimal inference call
-          import urllib.parse
-          candidates = [
-              "claude-sonnet-4-6",
-              "claude-sonnet-4-5",
-              "claude-3-7-sonnet",
-              "Anthropic-Claude-Sonnet-4",
-              "Claude-4-Sonnet",
-          ]
-          print("\n=== Inference probe (each candidate model) ===")
-          payload = json.dumps({
-              "model": "",  # filled below
-              "messages": [{"role": "user", "content": "say hi"}],
-              "max_tokens": 5,
-          }).encode()
-          for model_id in candidates:
-              body = json.dumps({
-                  "model": model_id,
-                  "messages": [{"role": "user", "content": "say hi"}],
-                  "max_tokens": 5,
-              }).encode()
-              req2 = urllib.request.Request(
-                  "https://models.inference.ai.azure.com/chat/completions",
-                  data=body,
-                  headers={
-                      "Authorization": f"Bearer {token}",
-                      "Content-Type": "application/json",
-                  },
-                  method="POST",
-              )
-              try:
-                  with urllib.request.urlopen(req2, timeout=15) as r:
-                      resp = json.loads(r.read())
-                  content = resp.get("choices", [{}])[0].get("message", {}).get("content", "")
-                  print(f"  ✅ {model_id}  →  OK  (reply: {content[:40]!r})")
-              except urllib.error.HTTPError as e:
-                  err_body = e.read().decode()
-                  try:
-                      code = json.loads(err_body).get("error", {}).get("code", "?")
-                  except Exception:
-                      code = err_body[:60]
-                  print(f"  ❌ {model_id}  →  {e.code} {code}")
-              except Exception as e:
-                  print(f"  ❌ {model_id}  →  {type(e).__name__}: {e}")
-          EOF
-
       - name: Run AI analysis
         env:
           FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
@@ -159,17 +85,8 @@ jobs:
           DISCORD_ANALYSIS_WEBHOOK_URL: ${{ secrets.DISCORD_ANALYSIS_WEBHOOK_URL }}
         run: |
           ARGS=""
-          # Dry-run flag from manual dispatch
           if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
             ARGS="--dry-run"
-          fi
-          # Weekday post-market runs (21:00 UTC = 4 PM ET) are gated:
-          # skip Claude call if NVDA moved <4% from last saved price → saves premium tokens
-          HOUR=$(date -u +%H)
-          DAY=$(date -u +%u)   # 1=Mon … 7=Sun
-          if [ "${{ github.event_name }}" = "schedule" ] && [ "$DAY" != "7" ] && [ "$HOUR" = "21" ]; then
-            ARGS="$ARGS --min-move-pct 4"
-            echo "📊 Post-market weekday run — gated at ≥4% move"
           fi
           python3 scripts/auto_analyze_and_update.py $ARGS
 
