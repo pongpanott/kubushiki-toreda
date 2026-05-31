@@ -56,8 +56,8 @@ jobs:
   notify-nvda:
     name: Publish NVDA levels to Discord
     if: |
-      github.event_name == 'workflow_dispatch' && github.event.inputs.ticker == 'NVDA' ||
-      github.event_name == 'push' && contains(github.event.head_commit.modified, 'config/nvda_alert_levels.json')
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.ticker == 'NVDA') ||
+      (github.event_name == 'push' && contains(toJSON(github.event.head_commit.modified), 'nvda_alert_levels.json'))
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
@@ -79,8 +79,8 @@ jobs:
   notify-smci:
     name: Publish SMCI levels to Discord
     if: |
-      github.event_name == 'workflow_dispatch' && github.event.inputs.ticker == 'SMCI' ||
-      github.event_name == 'push' && contains(github.event.head_commit.modified, 'config/smci_alert_levels.json')
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.ticker == 'SMCI') ||
+      (github.event_name == 'push' && contains(toJSON(github.event.head_commit.modified), 'smci_alert_levels.json'))
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
