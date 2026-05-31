@@ -385,11 +385,10 @@ def main() -> None:
     else:
         CONFIG_PATH = Path(__file__).parent.parent / "config" / f"{TICKER.lower()}_alert_levels.json"
 
-    # Resolve Finnhub key: explicit arg > ticker-specific env > generic fallback
+    # Resolve Finnhub key: explicit arg > ticker-specific env (no generic fallback)
     finnhub_key = (
         args.finnhub_key
-        or os.environ.get(f"FINNHUB_{TICKER}_API_KEY")
-        or os.environ.get("FINNHUB_API_KEY", "")
+        or os.environ.get(f"FINNHUB_{TICKER}_API_KEY", "")
     )
     args.finnhub_key = finnhub_key
 
@@ -417,7 +416,7 @@ def main() -> None:
         raise SystemExit(0)
 
     missing = [name for name, val in [
-        (f"FINNHUB_{TICKER}_API_KEY / FINNHUB_API_KEY", args.finnhub_key),
+        (f"FINNHUB_{TICKER}_API_KEY", args.finnhub_key),
         ("GITHUB_TOKEN", args.github_token),
     ] if not val]
     if missing:
