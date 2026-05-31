@@ -5,16 +5,20 @@ name: Auto-Update NVDA Alert Levels (AI Analysis)
 # Runs 1h BEFORE the reminder workflow so Discord receives fresh levels.
 #
 # Triggers:
-#   - Weekly: Sunday 12:00 UTC = 19:00 TH
-#   - Pre-Computex: June 1 (day before Computex June 2)
-#   - Pre-Earnings: August 25 (day before NVDA earnings Aug 26)
+#   - Weekly: Sunday 12:00 UTC = 19:00 TH  (full reset)
+#   - Pre-Computex: June 1 / Pre-Earnings: August 25
 #   - Manual dispatch (with optional dry-run)
+#
+# NOTE: Daily updates are intentionally omitted. Alert levels are weekly S/R
+# structures that don't change meaningfully each day. Use manual dispatch or
+# add a trigger when NVDA makes a genuinely large move (>4-5%).
 
 on:
   schedule:
-    - cron: '0 12 * * 0' # weekly Sunday
-    - cron: '0 12 1 6 *' # pre-Computex
-    - cron: '0 12 25 8 *' # pre-Earnings
+    - cron: '0 12 * * 0' # weekly Sunday 12:00 UTC = 19:00 TH (full reset, no gate)
+    - cron: '0 21 * * 1-5' # weekday post-market 21:00 UTC = 4 PM ET (gated ≥4% move)
+    - cron: '0 12 1 6 *' # pre-Computex June 1
+    - cron: '0 12 25 8 *' # pre-Earnings August 25
   workflow_dispatch:
     inputs:
       dry_run:
@@ -26,6 +30,7 @@ on:
 
 permissions:
   contents: write # allow git push back to repo
+  models: read    # allow GitHub Models API (Claude Sonnet) access via GITHUB_TOKEN
 
 jobs:
   analyze-and-update:
@@ -42,7 +47,32 @@ jobs:
         with: { python-version: '3.11' }
 
       - name: Install dependencies
-        run: pip install openai requests
+        run: pip install "openai>=1.0,<2" requests
+
+      - name: Notify Discord — pipeline starting
+        env:
+          DISCORD_ANALYSIS_WEBHOOK_URL: ${{ secrets.DISCORD_ANALYSIS_WEBHOOK_URL }}
+        run: |
+          python3 - <<'EOF'
+          import os, requests, datetime
+          url = os.getenv("DISCORD_ANALYSIS_WEBHOOK_URL")
+          if not url:
+              print("DISCORD_ANALYSIS_WEBHOOK_URL not set — skipping start notification")
+              exit(0)
+          embed = {
+              "title": "\u2699\ufe0f NVDA Alert Update \u2014 Pipeline Starting",
+              "description": "Auto-analyze & update NVDA alert levels has started.",
+              "color": 0x3498DB,
+              "fields": [
+                  {"name": "Time (UTC)", "value": datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"), "inline": True},
+                  {"name": "Trigger", "value": os.getenv("GITHUB_EVENT_NAME", "unknown"), "inline": True},
+              ],
+              "footer": {"text": "claude-trading-skills / auto-update-alerts"},
+          }
+          resp = requests.post(url, json={"embeds": [embed]}, timeout=10)
+          resp.raise_for_status()
+          print("Start notification sent to Discord")
+          EOF
 
       - name: Run AI analysis
         env:
@@ -51,8 +81,17 @@ jobs:
           DISCORD_ANALYSIS_WEBHOOK_URL: ${{ secrets.DISCORD_ANALYSIS_WEBHOOK_URL }}
         run: |
           ARGS=""
+          # Dry-run flag from manual dispatch
           if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
             ARGS="--dry-run"
+          fi
+          # Weekday post-market runs (21:00 UTC = 4 PM ET) are gated:
+          # skip Claude call if NVDA moved <4% from last saved price → saves premium tokens
+          HOUR=$(date -u +%H)
+          DAY=$(date -u +%u)   # 1=Mon … 7=Sun
+          if [ "${{ github.event_name }}" = "schedule" ] && [ "$DAY" != "7" ] && [ "$HOUR" = "21" ]; then
+            ARGS="$ARGS --min-move-pct 4"
+            echo "📊 Post-market weekday run — gated at ≥4% move"
           fi
           python3 scripts/auto_analyze_and_update.py $ARGS
 
