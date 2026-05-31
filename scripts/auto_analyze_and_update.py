@@ -349,7 +349,11 @@ def main() -> None:
         default="",
         help="Path to config JSON (default: config/<ticker>_alert_levels.json)",
     )
-    parser.add_argument("--finnhub-key", default=os.environ.get("FINNHUB_API_KEY", ""))
+    parser.add_argument(
+        "--finnhub-key",
+        default="",  # resolved after --ticker is known; see below
+        help="Finnhub API key override (env: FINNHUB_<TICKER>_API_KEY or FINNHUB_API_KEY)",
+    )
     parser.add_argument(
         "--github-token",
         default=os.environ.get("GITHUB_TOKEN", ""),
@@ -381,6 +385,14 @@ def main() -> None:
     else:
         CONFIG_PATH = Path(__file__).parent.parent / "config" / f"{TICKER.lower()}_alert_levels.json"
 
+    # Resolve Finnhub key: explicit arg > ticker-specific env > generic fallback
+    finnhub_key = (
+        args.finnhub_key
+        or os.environ.get(f"FINNHUB_{TICKER}_API_KEY")
+        or os.environ.get("FINNHUB_API_KEY", "")
+    )
+    args.finnhub_key = finnhub_key
+
     # Resolve webhook: explicit arg > ticker-specific env > generic fallback
     webhook = (
         args.analysis_webhook
@@ -401,11 +413,11 @@ def main() -> None:
         if args.analysis_webhook:
             send_analysis_discord(args.analysis_webhook, config, price)
         else:
-            print("⚠️  DISCORD_NVDA_ALERT_WEBHOOK / DISCORD_ANALYSIS_WEBHOOK_URL not set — nothing to send")
+            print(f"⚠️  DISCORD_{TICKER}_ALERT_WEBHOOK / DISCORD_ANALYSIS_WEBHOOK_URL not set — nothing to send")
         raise SystemExit(0)
 
     missing = [name for name, val in [
-        ("FINNHUB_API_KEY", args.finnhub_key),
+        (f"FINNHUB_{TICKER}_API_KEY / FINNHUB_API_KEY", args.finnhub_key),
         ("GITHUB_TOKEN", args.github_token),
     ] if not val]
     if missing:

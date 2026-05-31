@@ -92,6 +92,7 @@ jobs:
       - name: Send SMCI levels to Discord
         env:
           TICKER: SMCI
+          FINNHUB_SMCI_API_KEY: ${{ secrets.FINNHUB_SMCI_API_KEY }}
           DISCORD_SMCI_ALERT_WEBHOOK: ${{ secrets.DISCORD_SMCI_ALERT_WEBHOOK }}
           DISCORD_ANALYSIS_WEBHOOK_URL: ${{ secrets.DISCORD_ANALYSIS_WEBHOOK_URL }}
         run: python3 scripts/auto_analyze_and_update.py --ticker SMCI --notify-only
@@ -117,6 +118,8 @@ jobs:
       - name: Run AI analysis
         env:
           FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
+          FINNHUB_NVDA_API_KEY: ${{ secrets.FINNHUB_NVDA_API_KEY }}
+          FINNHUB_SMCI_API_KEY: ${{ secrets.FINNHUB_SMCI_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DISCORD_NVDA_ALERT_WEBHOOK: ${{ secrets.DISCORD_NVDA_ALERT_WEBHOOK }}
           DISCORD_SMCI_ALERT_WEBHOOK: ${{ secrets.DISCORD_SMCI_ALERT_WEBHOOK }}
@@ -137,4 +140,3 @@ jobs:
             git push
           )
           echo "Config commit step complete"
-
