@@ -1,68 +1,77 @@
 {
 	"last_updated": "2026-05-31",
-	"updated_by": "manual",
+	"updated_by": "claude-copilot",
 	"ticker": "NVDA",
-	"price_at_update": 211.14,
-	"analysis_summary": "NVDA ราคา $211 อยู่กลางอากาศ ไม่ใช่ support ไม่ใช่ breakout. Computex June 2 เป็น catalyst สำคัญที่อาจดัน breakout. Stop-loss ที่ $198.50 ให้ R/R = 2.7:1.",
+	"price_at_update": 211.16,
+	"analysis_summary": "NVDA ลองทะลุ $217.86 (day high) แต่ reject กลับลงมาที่ day low $211.13 — สัญญาณ bearish intraday reversal ชัดเจน. Computex keynote พรุ่งนี้ June 2 คือ catalyst หลัก ความเสี่ยง 'buy rumour sell news' สูงสุด. ไม่ควรซื้อก่อนเห็น post-keynote reaction.",
 	"pro_trader_notes": {
-		"current_setup": "ราคาอยู่กลางอากาศ ยังไม่มี setup ที่ชัดเจน — ไม่ซื้อตรงนี้",
-		"action_now": "รอดู 2 scenario: (A) ร่วงลง $205-208 แล้วค่อยเข้า หรือ (B) ทะลุ $217.86 พร้อม volume สูง",
-		"watch_for": "Day High $217.86 ถ้าทะลุพร้อม volume > avg → breakout entry | $208 ถ้าร่วงลงมา → buy zone",
-		"avoid": "อย่า FOMO ซื้อตอนนี้, อย่าซื้อวัน keynote Computex ถ้าราคาพุ่งแล้ว, อย่า average down ถ้า stop hit",
-		"catalyst_note": "Computex 2026 เริ่ม June 2 — ระวัง buy rumour sell news. รอ reaction หลัง keynote 1-2 วันก่อนตัดสินใจ",
-		"risk_rule": "Max risk 2% of port (~200 THB) | ถ้าขาดทุน 3 ครั้งติดกัน หยุด 1 สัปดาห์ | take profit 50% ที่ T1 แล้ว rotate"
+		"current_setup": "Bearish intraday reversal — ราคาทดสอบ resistance $217.86 แล้วถูก reject กลับมาที่ day low. Pre-Computex eve = ไม่มี setup ที่ปลอดภัย",
+		"action_now": "ไม่ทำอะไรทั้งนั้น (NO TRADE) จนกว่าจะเห็น post-Computex reaction 1-2 วัน. รอ 2 scenario หลัง keynote June 2",
+		"watch_for": "Scenario A: ราคาร่วงลง $205-208 หลัง keynote (sell the news) → buy zone | Scenario B: ราคา consolidate เหนือ $213 แล้ว breakout $219 พร้อม volume → breakout entry",
+		"avoid": "อย่าซื้อก่อน Computex keynote พรุ่งนี้, อย่า FOMO ถ้า Jensen Huang ประกาศ news แล้วราคาพุ่ง, อย่าลืม ex-div June 4 (~$0.25 drop)",
+		"catalyst_note": "⚡ CRITICAL: Computex keynote พรุ่งนี้ June 2 — ระวัง buy rumour sell news สูงสุด. วันนี้ rejection ที่ $217.86 เป็นสัญญาณที่ smart money distribute แล้ว",
+		"risk_rule": "Max risk 2% of port (~200 THB) | ถ้าขาดทุน 3 ครั้งติดกัน หยุด 1 สัปดาห์ | take profit 50% ที่ T1 แล้ว rotate capital"
 	},
 	"levels": [
 		{
-			"price": 218.0,
+			"price": 219.5,
 			"direction": "above",
-			"label": "🚀 BREAKOUT — Day High Cleared",
-			"message": "NVDA ทะลุ $218 — ผ่าน Day High!\nรอ volume confirm แล้วเข้า Zone B",
+			"label": "🚀 BREAKOUT — Resistance Cleared",
+			"message": "NVDA ทะลุ $219.50 — ผ่าน resistance zone!\nVolume > avg required. Entry Zone B | Stop: $210 | Target: $238",
 			"color": "0x00BFFF"
 		},
 		{
 			"price": 208.0,
 			"direction": "below",
-			"label": "🟢 BUY ZONE A",
-			"message": "NVDA แตะ $208 — เข้า Zone A (Pullback)\nEntry: $205-208 | Stop: $198.50 | Target 1: $222",
+			"label": "🟢 BUY ZONE A — Post-Computex",
+			"message": "NVDA แตะ $208 — เข้า Zone A (Post-keynote pullback)\nEntry: $205-208 | Stop: $198.50 | Target 1: $222 | R/R = 1.5:1",
 			"color": "0x00FF00"
 		},
 		{
 			"price": 205.0,
 			"direction": "below",
-			"label": "🟢 BUY ZONE A (DEEP)",
-			"message": "NVDA แตะ $205 — ใจกลาง Zone A!\nEntry แนะนำ: ตอนนี้เลย | Stop: $198.50 | R/R = 2.7:1",
+			"label": "🟢 BUY ZONE A (DEEP) — Best R/R",
+			"message": "NVDA แตะ $205 — ใจกลาง Zone A, R/R ดีที่สุด!\nEntry: $205 | Stop: $198.50 | Target 1: $222 | R/R = 2.6:1",
 			"color": "0x00CC00"
 		},
 		{
 			"price": 198.5,
 			"direction": "below",
-			"label": "🔴 STOP-LOSS ถูกทดสอบ",
-			"message": "NVDA ลงใต้ $198.50 ⚠️\nถ้าถืออยู่: ตัดขาดทุนทันที อย่ารอ",
+			"label": "🔴 STOP-LOSS — ตัดขาดทุนทันที",
+			"message": "NVDA ลงใต้ $198.50 ⚠️ Structure เสียแล้ว\nถ้าถืออยู่: ตัดขาดทุนทันที ไม่รอ ไม่ average down",
 			"color": "0xFF0000"
 		},
 		{
 			"price": 222.0,
 			"direction": "above",
-			"label": "🟡 TARGET 1 (+5%)",
-			"message": "NVDA แตะ $222 — TARGET 1!\nขาย 50% เพื่อ lock กำไร | ย้าย stop → $208",
+			"label": "🟡 TARGET 1 (+5% จาก $211)",
+			"message": "NVDA แตะ $222 — TARGET 1 achieved!\nขาย 50% lock กำไร | ย้าย stop → $208 | รอ Target 2",
 			"color": "0xFFFF00"
 		},
 		{
-			"price": 236.0,
+			"price": 238.0,
 			"direction": "above",
-			"label": "🎯 TARGET 2 — 52W HIGH (+12%)",
-			"message": "NVDA แตะ $236 — 52-Week High Zone!\nขายที่เหลือทั้งหมด หรือ trailing stop ที่ $225",
+			"label": "🎯 TARGET 2 — Post-Computex Extension (+13%)",
+			"message": "NVDA แตะ $238 — TARGET 2 zone!\nขายที่เหลือทั้งหมด หรือ trailing stop $226 | R/R = 3.9:1 จาก $205",
 			"color": "0xFF8800"
 		}
 	],
 	"upcoming_events": [
 		{
 			"date": "2026-06-02",
-			"event": "🖥️ Computex 2026 เริ่ม (Jensen Huang keynote)"
+			"event": "🖥️ Computex 2026 — Jensen Huang Keynote (พรุ่งนี้! ⚠️ HIGH RISK)"
 		},
-		{ "date": "2026-06-04", "event": "💰 NVDA Ex-Dividend Date ($0.25/share)" },
-		{ "date": "2026-06-06", "event": "🖥️ Computex 2026 สิ้นสุด" },
-		{ "date": "2026-08-26", "event": "📊 NVDA Earnings Q2 FY27" }
+		{
+			"date": "2026-06-04",
+			"event": "💰 NVDA Ex-Dividend Date ($0.25/share) — ราคาจะ drop ~$0.25 โดยอัตโนมัติ"
+		},
+		{
+			"date": "2026-06-06",
+			"event": "🖥️ Computex 2026 สิ้นสุด"
+		},
+		{
+			"date": "2026-08-25",
+			"event": "📊 NVDA Earnings Q2 FY27 (After Market) — EPS est. $2.12 | Rev est. $93.2B"
+		}
 	]
 }
