@@ -1,69 +1,76 @@
 {
 	"last_updated": "2026-05-31",
-	"updated_by": "manual-init",
+	"updated_by": "claude-sonnet-4-6-local",
 	"ticker": "SMCI",
 	"price_at_update": 46.10,
-	"analysis_summary": "SMCI ราคา $46 วันนี้ขึ้น 11.62% จาก AI server demand surge — เป็น AI infrastructure play เดียวกับ NVDA (ลูกค้าหลักซื้อ NVDA GPU). ทุน 10,000 THB (~$278) ซื้อได้ 6 หุ้น, 1% move = ~100 THB กำไร. รอ pullback ก่อนเข้า ไม่ไล่ราคาที่ขึ้นมาแล้ว 11% ในวันเดียว.",
+	"analysis_summary": "SMCI พุ่ง +11.62% ($41.30→$46.10) จาก European AI Cloud Partnership deal + momentum จาก NVDA AI server narrative. Gap up open $44.51, high $48.34, ปิด $46.10 (กลางช่วง) = healthy consolidation ไม่ใช่ exhaustion. Jensen Huang เตือนให้ SMCI 'improve regulation' — เป็น risk ระยะยาว. Earnings Aug 3. รอ pullback $43-44 ก่อนเข้า ทุน 10,000 THB (6 หุ้น) = 1% move ≈ 100 THB",
 	"pro_trader_notes": {
-		"current_setup": "ราคาพุ่งแรง 11% intraday — overbought ระยะสั้น. ยังไม่มี setup ที่ดี รอ pullback สู่ support",
-		"action_now": "ไม่ซื้อตอนนี้ — รอ pullback สู่ $42-44 แล้วค่อยเข้า หรือรอ consolidate 2-3 วัน",
-		"watch_for": "Pullback Zone: $42-44 (previous resistance เป็น support ใหม่) | Breakout: ทะลุ $49 พร้อม volume > avg",
-		"avoid": "อย่า FOMO ซื้อหลังขึ้น 11% แล้ว, อย่า average down ถ้าราคาหลุด $40",
-		"catalyst_note": "SMCI ตามรอย NVDA — ถ้า Computex มี positive AI server news, SMCI มักขึ้นตาม",
-		"risk_rule": "Max risk 2% of port (~200 THB) | 6 หุ้น × $46 = ~$276 | Stop ที่ $40 = เสีย $36 = ~1,300 THB (เกิน budget ต้องลด shares)"
+		"current_setup": "Gap up +11.62% — overbought intraday แต่ปิดกลางช่วงไม่ใช่ที่ low = bullish bias ยังอยู่. รอ pullback ก่อนเข้าพรุ่งนี้",
+		"action_now": "ไม่ซื้อ open พรุ่งนี้ — รอ 30 นาทีแรกดูทิศทาง. Setup A: ถ้าดิ่งมา $43-44 → เข้า. Setup B: ถ้าถือเหนือ $45 VWAP 30 นาที → เข้า momentum ด้วย 3-4 หุ้น",
+		"watch_for": "Setup A Entry: $43-44 (gap fill) | Setup B Entry: consolidate เหนือ $45 หลัง 30 นาทีแรก | Breakout Target: $49-50 (new high + psychological)",
+		"avoid": "อย่าซื้อ open ทันทีพรุ่งนี้, อย่า FOMO ถ้า gap up ต่อ (ขึ้น 11% แล้ว), อย่าถือข้าม earnings Aug 3",
+		"catalyst_note": "Jensen Huang เตือน SMCI เรื่อง regulation = risk ระยะยาวถ้า NVDA ลด partnership. Computex June 2 อาจให้ sentiment ต่อ AI server. Earnings Aug 3 = ไม่ถือ full position ข้าม",
+		"risk_rule": "Daily trade: risk ≤ 300-350 THB ต่อ trade | 6 หุ้น × $46 = ~$276 | stop gap ที่ $41.50 = loss $4.60/share × 6 = $27.60 = ~994 THB (เกิน! ใช้แค่ 3-4 หุ้น) | เป้า: กำไร 200-500 THB ต่อ trade"
 	},
 	"levels": [
 		{
 			"price": 49.0,
 			"direction": "above",
 			"label": "🚀 BREAKOUT — New High Zone",
-			"message": "SMCI ทะลุ $49 — breakout zone!\nEntry Zone B | Stop: $44 | Target: $54",
+			"message": "SMCI ทะลุ $49 — breakout เหนือ today's high!\nSetup B entry confirm | Stop: $44 | Target: $54-55",
 			"color": "0x00BFFF"
+		},
+		{
+			"price": 45.0,
+			"direction": "above",
+			"label": "📍 MOMENTUM ENTRY — VWAP Hold",
+			"message": "SMCI ถือเหนือ $45 หลัง 30 นาทีแรก — Setup B momentum!\nEntry 3-4 หุ้น | Stop: $43.50 | Target: $49",
+			"color": "0x00AAFF"
 		},
 		{
 			"price": 44.0,
 			"direction": "below",
-			"label": "🟢 BUY ZONE A — Pullback Support",
-			"message": "SMCI แตะ $44 — เข้า Zone A (pullback)\nEntry: $42-44 | Stop: $40 | Target 1: $50 | 6 หุ้น",
+			"label": "🟢 BUY ZONE A — Gap Fill Support",
+			"message": "SMCI แตะ $44 — Setup A! (gap fill zone / prev resistance)\nEntry 4-6 หุ้น | Stop: $41.50 | Target: $47-48",
 			"color": "0x00FF00"
 		},
 		{
-			"price": 42.0,
+			"price": 43.0,
 			"direction": "below",
 			"label": "🟢 BUY ZONE A (DEEP) — Best R/R",
-			"message": "SMCI แตะ $42 — ใจกลาง Zone A R/R ดีที่สุด!\nEntry: $42 | Stop: $40 | Target 1: $50 | R/R = 4:1",
+			"message": "SMCI แตะ $43 — ใจกลาง Zone A R/R ดีที่สุด!\nEntry: $43 | Stop: $41.50 | Target: $48 | R/R = 3.3:1",
 			"color": "0x00CC00"
 		},
 		{
-			"price": 40.0,
+			"price": 41.5,
 			"direction": "below",
 			"label": "🔴 STOP-LOSS — ตัดขาดทุนทันที",
-			"message": "SMCI ลงใต้ $40 ⚠️ Structure เสียแล้ว\nถ้าถืออยู่: ตัดขาดทุนทันที ไม่รอ ไม่ average down",
+			"message": "SMCI ลงใต้ $41.50 ⚠️ Structure เสียแล้ว (ต่ำกว่า gap open)\nตัดขาดทุนทันที ไม่รอ ไม่ average down",
 			"color": "0xFF0000"
+		},
+		{
+			"price": 48.0,
+			"direction": "above",
+			"label": "🟡 TARGET 1 — Retest Today's High",
+			"message": "SMCI แตะ $48 — TARGET 1 (retest today's high $48.34)!\nขาย 50% lock กำไร | ย้าย stop → $44 | รอ $50",
+			"color": "0xFFFF00"
 		},
 		{
 			"price": 50.0,
 			"direction": "above",
-			"label": "🟡 TARGET 1 (+8% จาก $46)",
-			"message": "SMCI แตะ $50 — TARGET 1!\nขาย 50% lock กำไร | ย้าย stop → $44 | รอ Target 2",
-			"color": "0xFFFF00"
-		},
-		{
-			"price": 55.0,
-			"direction": "above",
-			"label": "🎯 TARGET 2 (+19% จาก $46)",
-			"message": "SMCI แตะ $55 — TARGET 2 zone!\nขายที่เหลือทั้งหมด หรือ trailing stop $50",
+			"label": "🎯 TARGET 2 — Psychological Round Number",
+			"message": "SMCI แตะ $50 — TARGET 2! Psychological resistance\nขายที่เหลือทั้งหมด หรือ trailing stop $46",
 			"color": "0xFF8800"
 		}
 	],
 	"upcoming_events": [
 		{
 			"date": "2026-06-02",
-			"event": "🖥️ Computex 2026 — NVDA Keynote (SMCI มักขึ้นตาม AI server news)"
+			"event": "🖥️ Computex 2026 — NVDA Keynote (SMCI มักขึ้นตาม AI server news ⚡)"
 		},
 		{
-			"date": "2026-08-26",
-			"event": "📊 SMCI Earnings Q4 FY26 (est.) — check IR for exact date"
+			"date": "2026-08-03",
+			"event": "📊 SMCI Earnings Q4 FY26 (After Market) — EPS est. $0.70 | Rev est. $11.6B ⚠️ ไม่ถือข้าม"
 		}
 	]
 }
