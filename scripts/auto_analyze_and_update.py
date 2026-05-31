@@ -28,7 +28,7 @@ FINNHUB_BASE = "https://finnhub.io/api/v1"
 TICKER = "NVDA"
 NEWS_DAYS = 5
 # GitHub Models endpoint — uses GITHUB_TOKEN, no separate API key required
-GITHUB_MODELS_ENDPOINT = "https://models.inference.ai.azure.com"
+GITHUB_MODELS_ENDPOINT = os.environ.get("GITHUB_MODELS_ENDPOINT", "https://models.inference.ai.azure.com")
 CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-5")
 
 
@@ -190,55 +190,140 @@ Rules for levels:
 # Discord notification
 # ---------------------------------------------------------------------------
 
+
+def _days_until(date_str: str, today) -> int:
+    """Days from today to date_str (YYYY-MM-DD).  Returns -1 if past or parse error."""
+    try:
+        return (datetime.strptime(date_str, "%Y-%m-%d").date() - today).days
+    except ValueError:
+        return -1
+
+
 def send_analysis_discord(webhook_url: str, analysis: dict, price: float) -> None:
-    levels_text = "\n".join(
-        f"{'≥' if lv['direction'] == 'above' else '≤'} **${lv['price']:.2f}** — {lv['label']}"
-        for lv in analysis.get("levels", [])
-    )
-    events_text = "\n".join(
-        f"• {ev['event']} ({ev['date']})"
-        for ev in analysis.get("upcoming_events", [])
-    ) or "—"
+    """Send four focused Discord embeds: Market Pulse · Alert Levels · Copilot · Catalysts."""
+    today = datetime.now().date()
 
+    def pct(target_price: float) -> str:
+        if price <= 0:
+            return ""
+        return f"{(target_price - price) / price * 100:+.1f}%"
+
+    # ── Categorise + sort levels ───────────────────────────────────────────
+    levels = analysis.get("levels", [])
+    above = sorted(
+        [lv for lv in levels if lv["direction"] == "above"],
+        key=lambda x: x["price"],
+    )  # nearest target first
+    below = sorted(
+        [lv for lv in levels if lv["direction"] == "below"],
+        key=lambda x: x["price"],
+        reverse=True,
+    )  # nearest support/stop first
+
+    def level_lines(lst: list) -> str:
+        if not lst:
+            return "—"
+        return "\n".join(
+            f"{lv['label']}  **`${lv['price']:.2f}`**  `{pct(lv['price'])}`"
+            for lv in lst
+        )
+
+    # ── Embed 1 — Market Pulse ─────────────────────────────────────────────
+    embed1 = {
+        "title": "📡  NVDA — Market Pulse",
+        "description": analysis.get("analysis_summary", "—"),
+        "color": 0x5865F2,
+        "fields": [
+            {
+                "name": "💵  ราคา ณ เวลาวิเคราะห์",
+                "value": f"**`${price:.2f}`**",
+                "inline": True,
+            },
+            {
+                "name": "🕐  อัปเดต (TH)",
+                "value": datetime.now().strftime("%d %b %Y  %H:%M"),
+                "inline": True,
+            },
+        ],
+        "footer": {"text": "Claude AI + Finnhub  •  claude-trading-skills"},
+    }
+
+    # ── Embed 2 — Alert Levels ─────────────────────────────────────────────
+    lvl_fields = []
+    if above:
+        lvl_fields.append(
+            {"name": "🎯  Targets  ↑ above", "value": level_lines(above), "inline": False}
+        )
+    if below:
+        lvl_fields.append(
+            {
+                "name": "🟢  Buy Zones / Stop  ↓ below",
+                "value": level_lines(below),
+                "inline": False,
+            }
+        )
+    embed2 = {
+        "title": "📊  Alert Levels",
+        "color": 0x2ECC71,
+        "fields": lvl_fields or [{"name": "Levels", "value": "—", "inline": False}],
+        "footer": {"text": f"Reference  ${price:.2f}"},
+    }
+
+    # ── Embed 3 — Pro Trader Copilot ───────────────────────────────────────
     notes = analysis.get("pro_trader_notes", {})
-    copilot_lines = []
-    if notes.get("current_setup"):
-        copilot_lines.append(f"📌 **Setup:** {notes['current_setup']}")
-    if notes.get("action_now"):
-        copilot_lines.append(f"✅ **ทำตอนนี้:** {notes['action_now']}")
-    if notes.get("watch_for"):
-        copilot_lines.append(f"👁 **จับตา:** {notes['watch_for']}")
-    if notes.get("avoid"):
-        copilot_lines.append(f"⚠️ **อย่าทำ:** {notes['avoid']}")
-    if notes.get("catalyst_note"):
-        copilot_lines.append(f"⚡ **Catalyst:** {notes['catalyst_note']}")
-    if notes.get("risk_rule"):
-        copilot_lines.append(f"🛡 **Risk rule:** {notes['risk_rule']}")
-    copilot_text = "\n".join(copilot_lines) or "—"
-
-    embeds = [
-        {
-            "title": "🤖 NVDA Alert Levels อัปเดตอัตโนมัติ",
-            "description": analysis.get("analysis_summary", ""),
-            "color": 0x5865F2,
-            "fields": [
-                {"name": "💵 ราคาตอนวิเคราะห์", "value": f"**${price:.2f}**", "inline": True},
-                {"name": "🕐 เวลา (TH)", "value": datetime.now().strftime("%Y-%m-%d %H:%M"), "inline": True},
-                {"name": "📊 Alert Levels ใหม่", "value": levels_text or "—", "inline": False},
-                {"name": "⚡ Catalysts ที่อัปเดต", "value": events_text, "inline": False},
-            ],
-            "footer": {"text": "วิเคราะห์โดย Claude AI + Finnhub News | claude-trading-skills"},
-        },
-        {
-            "title": "🧠 Pro Trader Copilot — ตอนนี้ต้องทำอะไร?",
-            "description": copilot_text,
-            "color": 0xFF8C00,
-            "footer": {"text": "Pro rules: ไม่ไล่ | ไม่ FOMO | ไม่ average down | take profit T1 แล้ว rotate"},
-        },
+    note_fields = [
+        {"name": label, "value": (notes.get(key) or "").strip()[:1024], "inline": False}
+        for key, label in [
+            ("current_setup", "📌  Setup ตอนนี้"),
+            ("action_now",    "✅  ทำตอนนี้"),
+            ("watch_for",     "👁  จับตา"),
+            ("avoid",         "🚫  อย่าทำ"),
+            ("catalyst_note", "⚡  Catalyst"),
+            ("risk_rule",     "🛡  Risk Rule"),
+        ]
+        if (notes.get(key) or "").strip()
     ]
+    embed3 = {
+        "title": "🧠  Pro Trader Copilot",
+        "description": "คำแนะนำ AI สำหรับ position ตอนนี้",
+        "color": 0xFF8C00,
+        "fields": note_fields or [{"name": "—", "value": "ไม่มีข้อมูล", "inline": False}],
+        "footer": {
+            "text": "Rules: ไม่ไล่ราคา  •  ไม่ FOMO  •  ไม่ average down  •  take profit T1 แล้ว rotate"
+        },
+    }
+
+    # ── Embed 4 — Upcoming Catalysts (future events only) ─────────────────
+    embeds = [embed1, embed2, embed3]
+    future_events = [
+        ev for ev in analysis.get("upcoming_events", [])
+        if _days_until(ev.get("date", ""), today) >= 0
+    ]
+    if future_events:
+        event_lines = []
+        for ev in future_events[:8]:
+            days = _days_until(ev.get("date", ""), today)
+            if days == 0:
+                countdown = "**วันนี้** 🔔"
+            elif days <= 7:
+                countdown = f"อีก **{days} วัน** ⚠️"
+            else:
+                countdown = f"อีก {days} วัน"
+            event_lines.append(
+                f"`{ev.get('date', '?')}`  {ev.get('event', '?')}  —  {countdown}"
+            )
+        embeds.append(
+            {
+                "title": "📅  Upcoming Catalysts",
+                "description": "\n".join(event_lines),
+                "color": 0xF39C12,
+                "footer": {"text": "เฉพาะ catalysts ที่ยังไม่ผ่าน"},
+            }
+        )
+
     resp = requests.post(webhook_url, json={"embeds": embeds}, timeout=10)
     resp.raise_for_status()
-    print("✅ Analysis + Pro Trader Copilot sent to Discord")
+    print(f"✅ Discord notification sent ({len(embeds)} embeds)")
 
 
 # ---------------------------------------------------------------------------
@@ -257,6 +342,12 @@ def main() -> None:
         "--analysis-webhook",
         default=os.environ.get("DISCORD_ANALYSIS_WEBHOOK_URL", ""),
         help="Discord webhook for analysis channel (separate from price alerts)",
+    )
+    parser.add_argument(
+        "--min-move-pct",
+        type=float,
+        default=0.0,
+        help="Skip AI analysis if price moved less than this %% from last config (0 = always run)",
     )
     parser.add_argument("--dry-run", action="store_true", help="Print result without saving or sending")
     args = parser.parse_args()
@@ -279,8 +370,27 @@ def main() -> None:
     print(f"💵 Current price: ${current_price:.2f}  ({price_data.get('dp', 0):+.2f}%)")
     print(f"📰 News items: {len(news)} | Earnings entries: {len(earnings)}")
 
-    print(f"🤖 Analyzing with Claude Sonnet via GitHub Models ({CLAUDE_MODEL})...")
-    analysis = analyze_with_claude(args.github_token, price_data, news, earnings, current_config)
+    if args.min_move_pct > 0:
+        last_ref = float(current_config.get("price_at_update") or 0)
+        if last_ref > 0:
+            move_pct = abs(current_price - last_ref) / last_ref * 100
+            if move_pct < args.min_move_pct:
+                print(
+                    f"⏭️  Price moved {move_pct:.1f}% from last ref ${last_ref:.2f} "
+                    f"— below {args.min_move_pct}% threshold. Skipping AI analysis."
+                )
+                raise SystemExit(0)
+            print(f"✅ Price moved {move_pct:.1f}% ≥ {args.min_move_pct}% — proceeding with analysis.")
+
+    print(f"🤖 Analyzing with Claude Sonnet via GitHub Models ({CLAUDE_MODEL}) at {GITHUB_MODELS_ENDPOINT}...")
+    try:
+        analysis = analyze_with_claude(args.github_token, price_data, news, earnings, current_config)
+    except Exception as exc:
+        print(f"❌ Claude API call failed: {type(exc).__name__}: {exc}")
+        print(f"   Model used: {CLAUDE_MODEL}")
+        print(f"   Endpoint:   {GITHUB_MODELS_ENDPOINT}")
+        print("   Tip: set CLAUDE_MODEL and/or GITHUB_MODELS_ENDPOINT env vars to override defaults.")
+        raise SystemExit(1) from exc
 
     new_config = {
         "last_updated": datetime.now().strftime("%Y-%m-%d"),
