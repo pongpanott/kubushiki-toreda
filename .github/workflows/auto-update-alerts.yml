@@ -30,7 +30,7 @@ on:
 
 permissions:
   contents: write # allow git push back to repo
-  models: read    # allow GitHub Models API (Claude Sonnet) access via GITHUB_TOKEN
+  models: read # allow GitHub Models API (Claude Sonnet) access via GITHUB_TOKEN
 
 jobs:
   analyze-and-update:

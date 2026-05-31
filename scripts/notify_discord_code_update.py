@@ -3,7 +3,7 @@
 Notify Discord channel about code/workflow updates and basic health check.
 
 Reads repository commit info and runs a lightweight syntax check on Python files.
-Sends an embed message to the webhook provided in env `DISCORD_NVDA_ALERT_WEBHOOK`.
+Sends an embed message to the webhook provided in env `DISCORD_ANALYSIS_WEBHOOK_URL`.
 """
 
 import os
@@ -73,9 +73,9 @@ def send_webhook(webhook: str, commit: dict, health_ok: bool, health_msg: str):
 
 
 def main():
-    webhook = os.environ.get("DISCORD_NVDA_ALERT_WEBHOOK")
+    webhook = os.environ.get("DISCORD_ANALYSIS_WEBHOOK_URL")
     if not webhook:
-        print("Missing DISCORD_NVDA_ALERT_WEBHOOK")
+        print("Missing DISCORD_ANALYSIS_WEBHOOK_URL")
         raise SystemExit(1)
 
     commit = get_commit_info()

@@ -16,5 +16,5 @@ jobs:
         run: pip install requests
       - name: Notify Discord of code update
         env:
-          DISCORD_NVDA_ALERT_WEBHOOK: ${{ secrets.DISCORD_NVDA_ALERT_WEBHOOK }}
+          DISCORD_ANALYSIS_WEBHOOK_URL: ${{ secrets.DISCORD_ANALYSIS_WEBHOOK_URL }}
         run: python3 scripts/notify_discord_code_update.py

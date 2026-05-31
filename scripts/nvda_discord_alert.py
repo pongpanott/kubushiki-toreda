@@ -151,17 +151,16 @@ def send_discord_alert(
     webhook_url: str, label: str, message: str, price: float, color: int, session: str = ""
 ) -> bool:
     """Send a rich embed message to Discord webhook."""
-    session_badge = f" `{session}`" if session else ""
     embed = {
-        "title": f"{label}{session_badge}",
+        "title": label,
         "description": message,
         "color": color,
         "fields": [
-            {"name": "Current Price", "value": f"**${price:.2f}**", "inline": True},
-            {"name": "Session", "value": session or "—", "inline": True},
-            {"name": "Time (TH)", "value": now(), "inline": True},
+            {"name": "💵  ราคา", "value": f"**`${price:.2f}`**", "inline": True},
+            {"name": "📊  Session", "value": f"`{session or '—'}`", "inline": True},
+            {"name": "🕐  เวลา (TH)", "value": f"`{now()}`", "inline": True},
         ],
-        "footer": {"text": "NVDA Price Alert Bot | claude-trading-skills"},
+        "footer": {"text": "NVDA Price Alert  •  claude-trading-skills"},
     }
     payload = {"embeds": [embed]}
     try:
@@ -178,23 +177,36 @@ def now() -> str:
 
 
 def send_startup_message(webhook_url: str, price: float) -> None:
-    """Send confirmation that the bot is running."""
+    """Send startup confirmation with dynamically loaded levels."""
+    above = sorted(
+        [lv for lv in ALERT_LEVELS if lv["direction"] == "above"],
+        key=lambda x: x["price"],
+    )
+    below = sorted(
+        [lv for lv in ALERT_LEVELS if lv["direction"] == "below"],
+        key=lambda x: x["price"],
+        reverse=True,
+    )
+
+    def fmt(lst: list) -> str:
+        return "\n".join(
+            f"{lv['label']}  **`${lv['price']:.2f}`**" for lv in lst
+        ) or "—"
+
     embed = {
-        "title": "🚀 NVDA Alert Bot เริ่มทำงานแล้ว",
+        "title": "🟢  NVDA Alert Bot — กำลังทำงาน",
         "description": (
-            f"กำลังติดตาม **{TICKER}** ทุก {CHECK_INTERVAL_SECONDS} วินาที\n\n"
-            f"**Alert Levels ที่ตั้งไว้:**\n"
-            f"🟢 BUY Zone A: ≤ $208 และ ≤ $205\n"
-            f"🔴 STOP WARNING: ≤ $198.50\n"
-            f"🟡 Target 1 / Breakout: ≥ $222\n"
-            f"🎯 Target 2: ≥ $235"
+            f"ติดตาม **{TICKER}** ทุก `{CHECK_INTERVAL_SECONDS}s`  "
+            f"•  {len(ALERT_LEVELS)} levels โหลดแล้ว"
         ),
-        "color": 0x5865F2,
+        "color": 0x2ECC71,
         "fields": [
-            {"name": "ราคาตอนเริ่ม", "value": f"**${price:.2f}**", "inline": True},
-            {"name": "เริ่มเวลา (TH)", "value": now(), "inline": True},
+            {"name": "💵  ราคาเริ่มต้น", "value": f"**`${price:.2f}`**", "inline": True},
+            {"name": "🕐  เริ่ม (TH)", "value": f"`{now()}`", "inline": True},
+            {"name": "🎯  Targets  ↑", "value": fmt(above), "inline": True},
+            {"name": "🟢  Support / Stop  ↓", "value": fmt(below), "inline": True},
         ],
-        "footer": {"text": "กด Ctrl+C เพื่อหยุด"},
+        "footer": {"text": "NVDA Alert Bot  •  claude-trading-skills"},
     }
     requests.post(webhook_url, json={"embeds": [embed]}, timeout=10)
 

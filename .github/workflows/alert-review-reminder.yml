@@ -47,7 +47,7 @@ jobs:
       - run: pip install requests
       - name: Send weekly reminder
         env:
-          DISCORD_NVDA_ALERT_WEBHOOK: ${{ secrets.DISCORD_NVDA_ALERT_WEBHOOK }}
+          DISCORD_ANALYSIS_WEBHOOK_URL: ${{ secrets.DISCORD_ANALYSIS_WEBHOOK_URL }}
         run: python3 scripts/send_review_reminder.py --reason weekly
 
   pre-computex-reminder:
@@ -61,7 +61,7 @@ jobs:
       - run: pip install requests
       - name: Send pre-catalyst reminder
         env:
-          DISCORD_NVDA_ALERT_WEBHOOK: ${{ secrets.DISCORD_NVDA_ALERT_WEBHOOK }}
+          DISCORD_ANALYSIS_WEBHOOK_URL: ${{ secrets.DISCORD_ANALYSIS_WEBHOOK_URL }}
         run: |
           python3 scripts/send_review_reminder.py \
             --reason pre_catalyst \
@@ -78,7 +78,7 @@ jobs:
       - run: pip install requests
       - name: Send earnings reminder
         env:
-          DISCORD_NVDA_ALERT_WEBHOOK: ${{ secrets.DISCORD_NVDA_ALERT_WEBHOOK }}
+          DISCORD_ANALYSIS_WEBHOOK_URL: ${{ secrets.DISCORD_ANALYSIS_WEBHOOK_URL }}
         run: |
           python3 scripts/send_review_reminder.py \
             --reason earnings \
@@ -95,7 +95,7 @@ jobs:
       - run: pip install requests
       - name: Send manual reminder
         env:
-          DISCORD_NVDA_ALERT_WEBHOOK: ${{ secrets.DISCORD_NVDA_ALERT_WEBHOOK }}
+          DISCORD_ANALYSIS_WEBHOOK_URL: ${{ secrets.DISCORD_ANALYSIS_WEBHOOK_URL }}
         run: |
           python3 scripts/send_review_reminder.py \
             --reason "${{ github.event.inputs.reason }}" \
