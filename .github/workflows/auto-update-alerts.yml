@@ -39,10 +39,10 @@ permissions:
   models: read # allow GitHub Models API access via GITHUB_TOKEN
 
 jobs:
-  # ── Job 1: publish Discord when config is pushed manually ──────────────────
+  # ── Job 1: publish Discord on push OR manual dispatch ────────────────────────
   notify-on-push:
     name: Publish updated levels to Discord
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
@@ -60,10 +60,10 @@ jobs:
           DISCORD_NVDA_ALERT_WEBHOOK: ${{ secrets.DISCORD_NVDA_ALERT_WEBHOOK }}
         run: python3 scripts/auto_analyze_and_update.py --notify-only
 
-  # ── Job 2: manual AI analysis via workflow_dispatch ────────────────────────
+  # ── Job 2: manual AI analysis via workflow_dispatch (skipped on push) ────────
   analyze-and-update:
     name: AI analysis → update config → commit  (manual dispatch only)
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
