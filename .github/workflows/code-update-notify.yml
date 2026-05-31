@@ -3,6 +3,10 @@ name: Notify Code / Workflow Update
 on:
   push:
     branches: [main]
+    # Skip when only the alert config changed — auto-update-alerts.yml
+    # already sends a richer analysis embed for that push.
+    paths-ignore:
+      - 'config/nvda_alert_levels.json'
   workflow_dispatch:
 
 jobs:
