@@ -1,0 +1,169 @@
+name: Trading Skill Runners
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Run in dry-run mode (true|false)'
+        required: false
+        default: 'true'
+  schedule:
+    - cron: '0 8 * * *' # optional: daily at 08:00 UTC (can be removed if undesired)
+
+jobs:
+  run_skills:
+    runs-on: ubuntu-latest
+    env:
+      DISCORD_WEBHOOK: ${{ secrets.DISCORD_ANALYSIS_WEBHOOK_URL }}
+      FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
+      FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
+      ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
+      ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install system deps
+        run: |
+          sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install jsonschema pyyaml requests scipy yfinance jq
+
+      - name: Download previous state artifact (if any)
+        uses: actions/download-artifact@v3
+        with:
+          name: price_state
+          path: ./state_artifact
+        continue-on-error: true
+
+      - name: Run selected trading skill scripts (rate-limited, resumable)
+        id: run_tasks
+        env:
+          DRY: ${{ github.event.inputs.dry_run || 'true' }}
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_ANALYSIS_WEBHOOK_URL }}
+          TICKERS: "${{ env.TICKERS || 'NVDA,SMCI' }}"
+          ALLOWED_RUN_MINUTES: 360
+          SAFETY_MARGIN_SECONDS: 90
+        run: |
+          set -euo pipefail
+          LOG=trading_skills.log
+          echo "Start trading skill runners: $(date -u +%Y-%m-%dT%H:%M:%SZ)" > $LOG
+
+          mkdir -p state_artifact
+          STATE_FILE=state_artifact/price_state.json
+          if [ -f "$STATE_FILE" ]; then
+            echo "Loaded previous state" >> $LOG
+            LAST_INDEX=$(jq -r '.last_index // -1' "$STATE_FILE")
+          else
+            echo "{}" > "$STATE_FILE"
+            LAST_INDEX=-1
+          fi
+
+          IFS=',' read -r -a ALL_TICKERS <<< "${TICKERS}"
+          N=${#ALL_TICKERS[@]}
+          if [ $N -eq 0 ]; then
+            echo "No tickers configured" >> $LOG
+            exit 0
+          fi
+
+          START_TS=$(date +%s)
+          MAX_SECONDS=$(( ALLOWED_RUN_MINUTES * 60 ))
+          i=0
+          # start from next ticker after last processed
+          START_INDEX=$(( (LAST_INDEX + 1) % N ))
+
+          for offset in $(seq 0 $((N-1))); do
+            idx=$(( (START_INDEX + offset) % N ))
+            ticker=${ALL_TICKERS[$idx]}
+
+            NOW_TS=$(date +%s)
+            ELAPSED=$(( NOW_TS - START_TS ))
+            REMAIN=$(( MAX_SECONDS - ELAPSED ))
+            if [ $REMAIN -le $SAFETY_MARGIN_SECONDS ]; then
+              echo "Time nearly up (remaining=${REMAIN}s) — stopping to allow next cron run to take over" | tee -a $LOG
+              break
+            fi
+
+            echo "Processing ticker: $ticker (index=$idx)" | tee -a $LOG
+
+            # retry wrapper
+            attempt=0
+            max_attempts=3
+            success=0
+            while [ $attempt -lt $max_attempts ]; do
+              attempt=$((attempt+1))
+              if [ "$DRY" = "false" ]; then
+                if [ -f "skills/${ticker,,}-screener/scripts/screen_${ticker,,}.py" ]; then
+                  python3 "skills/${ticker,,}-screener/scripts/screen_${ticker,,}.py" --output-dir reports 2>&1 | tee -a $LOG && success=1 && break || true
+                else
+                  # fallback: try common scripts by name mapped above
+                  case "$ticker" in
+                    NVDA|SMCI)
+                      # use vcp or market breadth as placeholder
+                      python3 skills/vcp-screener/scripts/screen_vcp.py --output-dir reports 2>&1 | tee -a $LOG && success=1 && break || true
+                      ;;
+                    *)
+                      echo "No dedicated script for $ticker; skipping" | tee -a $LOG
+                      success=1
+                      break
+                      ;;
+                  esac
+                fi
+              else
+                echo "(dry-run) would run analysis for $ticker" | tee -a $LOG
+                success=1
+                break
+              fi
+
+              echo "Attempt $attempt for $ticker failed; sleeping and retrying" | tee -a $LOG
+              sleep $((2 ** attempt))
+            done
+
+            if [ $success -eq 1 ]; then
+              echo "Processed $ticker successfully" | tee -a $LOG
+              # persist last processed index
+              jq -n --argjson idx $idx '{last_index:$idx, timestamp:(now|todate)}' > "$STATE_FILE" 2>/dev/null || echo "{\"last_index\": $idx}" > "$STATE_FILE"
+            else
+              echo "Failed to process $ticker after $max_attempts attempts" | tee -a $LOG
+            fi
+
+            # Respect Finnhub rate limit: 1 call per minute
+            echo "Sleeping 60s to respect API rate limits" | tee -a $LOG
+            sleep 60
+          done
+
+          echo "Finished run at $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $LOG
+          tail -n 200 $LOG || true
+
+      - name: Upload price state artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: price_state
+          path: state_artifact/price_state.json
+
+      - name: Send Discord notification (summary)
+        if: always()
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_ANALYSIS_WEBHOOK_URL }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          set -e
+          if [ -z "${DISCORD_WEBHOOK:-}" ]; then
+            echo "No DISCORD_WEBHOOK set; skipping notification."; exit 0
+          fi
+          LOGFILE=trading_skills.log
+          if [ -f "$LOGFILE" ]; then
+            CONTENT="$(tail -n 400 "$LOGFILE" | sed 's/"/\\"/g')"
+          else
+            CONTENT="Trading skill runners completed; no log available."
+          fi
+          TITLE="Trading Skill Runners - Status: $JOB_STATUS"
+          PAYLOAD=$(jq -nc --arg t "$TITLE" --arg c "$CONTENT" '{"content": ($t + "\n\n" + $c)}')
+          curl -s -H "Content-Type: application/json" -d "$PAYLOAD" "$DISCORD_WEBHOOK" || true

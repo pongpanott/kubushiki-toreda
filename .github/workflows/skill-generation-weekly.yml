@@ -1,0 +1,54 @@
+name: Skill Generation (weekly)
+
+on:
+  schedule:
+    - cron: '0 6 * * 6' # weekly on Saturday at 06:00 UTC
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Run in dry-run mode (true|false)'
+        required: false
+        default: 'true'
+
+jobs:
+  generation_weekly:
+    runs-on: ubuntu-latest
+    env:
+      DISCORD_WEBHOOK: ${{ secrets.DISCORD_ANALYSIS_WEBHOOK_URL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install jsonschema pyyaml requests scipy yfinance jq
+
+      - name: Run skill generation pipeline (weekly)
+        id: run_gen
+        run: |
+          set -euo pipefail
+          DRY="${{ github.event.inputs.dry_run || 'true' }}"
+          ARGS="--mode weekly"
+          if [ "$DRY" != "false" ]; then
+            ARGS="$ARGS --dry-run"
+          fi
+          python3 scripts/run_skill_generation_pipeline.py $ARGS | tee generation_weekly.log
+
+      - name: Send Discord notification
+        if: always()
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_ANALYSIS_WEBHOOK_URL }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          set -e
+          if [ -z "${DISCORD_WEBHOOK:-}" ]; then
+            echo "No DISCORD_WEBHOOK set; skipping notification."; exit 0
+          fi
+          SUMMARY="Skill generation (weekly) - Status: $JOB_STATUS"
+          PAYLOAD=$(jq -nc --arg c "$SUMMARY" '{"content": $c}')
+          curl -s -H "Content-Type: application/json" -d "$PAYLOAD" "$DISCORD_WEBHOOK" || true

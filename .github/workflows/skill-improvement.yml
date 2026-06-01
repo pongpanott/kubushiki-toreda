@@ -1,0 +1,61 @@
+name: Skill Improvement Loop (daily)
+
+on:
+  schedule:
+    - cron: '0 5 * * *' # daily at 05:00 UTC (adjust as needed)
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Run in dry-run mode (no edits/pr). true|false'
+        required: false
+        default: 'true'
+
+jobs:
+  improvement:
+    runs-on: ubuntu-latest
+    env:
+      DISCORD_WEBHOOK: ${{ secrets.DISCORD_ANALYSIS_WEBHOOK_URL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install jsonschema pyyaml requests scipy yfinance jq
+
+      - name: Run skill improvement loop
+        id: run_improve
+        run: |
+          set -euo pipefail
+          DRY="${{ github.event.inputs.dry_run || 'true' }}"
+          ARGS=""
+          if [ "$DRY" != "false" ]; then
+            ARGS="--dry-run"
+          fi
+          python3 scripts/run_skill_improvement_loop.py $ARGS | tee improvement.log
+        continue-on-error: false
+
+      - name: Send Discord notification (summary)
+        if: always()
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_ANALYSIS_WEBHOOK_URL }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          set -e
+          if [ -z "${DISCORD_WEBHOOK:-}" ]; then
+            echo "No DISCORD_WEBHOOK set; skipping notification."; exit 0
+          fi
+          REPORT="$(ls -1 reports/skill-improvement-log/*_summary.md 2>/dev/null | tail -n1 || true)"
+          if [ -n "$REPORT" ] && [ -f "$REPORT" ]; then
+            CONTENT="$(sed -n '1,200p' "$REPORT" | sed 's/"/\\"/g')"
+          else
+            CONTENT="Skill improvement run completed. Check workflow logs for details."
+          fi
+          TITLE="Skill Improvement - Status: $JOB_STATUS"
+          PAYLOAD=$(jq -nc --arg t "$TITLE" --arg c "$CONTENT" '{"content": ($t + "\n\n" + $c)}')
+          curl -s -H "Content-Type: application/json" -d "$PAYLOAD" "$DISCORD_WEBHOOK" || true
