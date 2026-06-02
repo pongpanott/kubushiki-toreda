@@ -2,18 +2,18 @@ name: SMCI Price Alert (24/7 Mon–Fri)
 
 # Public repo = unlimited Actions minutes → run every 60s, 24h Mon–Fri
 # GitHub Actions max job runtime = 6h → 4 overlapping slots cover 24h:
-#   slot-1 : 00:00 UTC → 361 min → ends 06:01 UTC
-#   slot-2 : 05:55 UTC → 361 min → ends 11:56 UTC
-#   slot-3 : 11:55 UTC → 361 min → ends 17:56 UTC
-#   slot-4 : 17:55 UTC → 361 min → ends 23:56 UTC
+#   slot-1 : 00:00 UTC → 361 min → ends 06:01 UTC  (UTC+7 = 07:00 start)
+#   slot-2 : 05:55 UTC → 361 min → ends 11:56 UTC  (UTC+7 = 12:55 start)
+#   slot-3 : 11:55 UTC → 361 min → ends 17:56 UTC  (UTC+7 = 18:55 start)
+#   slot-4 : 17:55 UTC → 361 min → ends 23:56 UTC  (UTC+7 = 00:55 next day start)
 # 5-min overlaps prevent gaps between slots.
 
 on:
   schedule:
-    - cron: '0 0  * * 1-5' # slot-1
-    - cron: '55 5  * * 1-5' # slot-2
-    - cron: '55 11 * * 1-5' # slot-3
-    - cron: '55 17 * * 1-5' # slot-4
+    - cron: '0 0  * * 1-5'   # slot-1 — 00:00 UTC (07:00 UTC+7)
+    - cron: '55 5  * * 1-5'  # slot-2 — 05:55 UTC (12:55 UTC+7)
+    - cron: '55 11 * * 1-5'  # slot-3 — 11:55 UTC (18:55 UTC+7)
+    - cron: '55 17 * * 1-5'  # slot-4 — 17:55 UTC (00:55 UTC+7 next day)
   workflow_dispatch:
     inputs:
       timeout_minutes:
