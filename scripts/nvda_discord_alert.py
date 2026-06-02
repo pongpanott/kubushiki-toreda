@@ -473,7 +473,32 @@ def main() -> None:
                 analysis = analyze_chart(TICKER, lookback_minutes=240)
 
                 # attach analysis summary to message
-                augmented_message = level["message"] + "\n\n" + f"✅ วิเคราะห์: {analysis.get('summary_th', '')} (score={analysis.get('score')})"
+                try:
+                    action, conf, reasons = recommend_action_from_analysis(analysis)
+                except Exception:
+                    action, conf, reasons = 'HOLD', 0.0, ''
+
+                base_msg = level.get("message", "")
+                summary = analysis.get('summary_th', '') if analysis else ''
+                score = analysis.get('score') if analysis else None
+
+                # If price has moved beyond the configured level, add a dynamic suggestion
+                extra = ""
+                try:
+                    if level.get("direction") == "below" and price > level.get("price", 0):
+                        extra = (
+                            f"\n\n⚠️ Level missed: current price ${price:.2f} > level ${level['price']:.2f}."
+                            f"\nSuggested: wait for a pullback to ${level['price']:.2f} or consider SHORT if analysis recommends SELL (analysis: {action} conf={conf:.2f})."
+                        )
+                    elif level.get("direction") == "above" and price < level.get("price", 0):
+                        extra = (
+                            f"\n\n⚠️ Level not reached: current price ${price:.2f} < level ${level['price']:.2f}."
+                            f"\nSuggested: wait for breakout above ${level['price']:.2f} or consider buy-on-pullback if analysis recommends BUY (analysis: {action} conf={conf:.2f})."
+                        )
+                except Exception:
+                    extra = ""
+
+                augmented_message = base_msg + extra + "\n\n" + f"✅ วิเคราะห์: {summary} (score={score})"
 
                 sent = send_discord_alert(
                     args.webhook_url,
