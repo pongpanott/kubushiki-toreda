@@ -30,6 +30,13 @@ except Exception:
     BKK_TZ = timezone(timedelta(hours=7))
 from pathlib import Path
 from datetime import datetime
+import sys
+
+# Ensure repository root is on sys.path so `from scripts...` imports work
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
 from scripts.alerts_utils import append_price_point, analyze_chart
 
 import requests
@@ -184,6 +191,129 @@ def send_discord_alert(
         return False
 
 
+def recommend_action_from_analysis(analysis: dict) -> tuple[str, float, str]:
+    """Simple rule-based recommendation using analysis.metrics."""
+    metrics = analysis.get('metrics', {})
+    ma50 = metrics.get('ma50')
+    ma200 = metrics.get('ma200')
+    recent_pct = metrics.get('recent_return_pct', 0.0)
+    rsi = metrics.get('rsi', 50.0)
+
+    action = 'HOLD'
+    confidence = 0.0
+    reasons = []
+
+    if ma50 and ma200:
+        if ma50 > ma200:
+            reasons.append('ma50>ma200')
+            confidence += 0.3
+        else:
+            reasons.append('ma50<=ma200')
+            confidence += 0.0
+
+    if recent_pct is not None:
+        if recent_pct > 0.5:
+            confidence += min(0.5, recent_pct / 5.0)
+        elif recent_pct < -0.5:
+            confidence += min(0.5, abs(recent_pct) / 5.0)
+
+    if rsi and rsi < 30:
+        reasons.append('rsi_oversold')
+        confidence += 0.1
+    elif rsi and rsi > 70:
+        reasons.append('rsi_overbought')
+        confidence += 0.1
+
+    # final decision
+    if (ma50 and ma200 and ma50 > ma200) and recent_pct > 0.2:
+        action = 'BUY'
+    elif (ma50 and ma200 and ma50 < ma200) and recent_pct < -0.2:
+        action = 'SELL'
+    else:
+        action = 'HOLD'
+
+    confidence = max(0.0, min(1.0, confidence))
+    return action, confidence, ', '.join(reasons)
+
+
+def send_analysis_if_configured(base_webhook: str, symbol: str, analysis: dict):
+    analysis_webhook = os.environ.get('DISCORD_ANALYSIS_WEBHOOK_URL') or os.environ.get('DISCORD_SMCI_ANALYSIS_WEBHOOK')
+    if not analysis_webhook:
+        return False
+
+    action, conf, reasons = recommend_action_from_analysis(analysis)
+    # Only notify on actionable signals (BUY or SELL); avoid repeated notifications
+    if action == 'HOLD':
+        return False
+
+    # persist last action to avoid repeated alerts
+    cache_dir = Path(__file__).parent.parent / 'state'
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_file = cache_dir / f'recommendation_{symbol}.json'
+    last = {}
+    try:
+        if cache_file.exists():
+            last = json.loads(cache_file.read_text())
+    except Exception:
+        last = {}
+
+    if last.get('action') == action:
+        # already sent same recommendation previously; skip
+        return False
+
+    # Build 'why this will beat market' message from analysis
+    score = analysis.get('score')
+    summary = analysis.get('summary_th', '')
+    metrics = analysis.get('metrics', {})
+    recent_pct = metrics.get('recent_return_pct')
+    edge_parts = []
+    if 'ma50' in metrics and 'ma200' in metrics and metrics.get('ma50') and metrics.get('ma200'):
+        if metrics['ma50'] > metrics['ma200']:
+            edge_parts.append('Uptrend: MA50 > MA200')
+        else:
+            edge_parts.append('Downtrend: MA50 <= MA200')
+    if recent_pct is not None:
+        edge_parts.append(f'Momentum: {recent_pct:+.2f}% over lookback')
+    rsi = metrics.get('rsi')
+    if rsi is not None:
+        if rsi < 30:
+            edge_parts.append('RSI oversold (possible rebound)')
+        elif rsi > 70:
+            edge_parts.append('RSI overbought (risk of pullback)')
+
+    reasons_text = reasons or summary or 'Technical alignment'
+    edge_text = '; '.join(edge_parts) or 'Price-action signal'
+
+    description = (
+        f"Recommendation: **{action}** (confidence {conf:.2f})\n"
+        f"Score: {score} · {reasons_text}\n\n"
+        f"Why this can beat the market: {edge_text}\n\n"
+        f"Summary: {summary}"
+    )
+
+    embed = {
+        'title': f'{symbol} — Trade Idea',
+        'description': description,
+        'fields': [
+            {'name': 'Confidence', 'value': f"{conf:.2f}", 'inline': True},
+        ],
+        'color': 3066993 if action == 'BUY' else 15105570,
+    }
+
+    try:
+        resp = requests.post(analysis_webhook, json={'embeds': [embed]}, timeout=10)
+        resp.raise_for_status()
+        # record last action
+        try:
+            cache_file.write_text(json.dumps({'action': action, 'confidence': conf, 'ts': now()}))
+        except Exception:
+            pass
+        return True
+    except Exception as e:
+        print(f"[{now()}] Analysis post failed: {e}")
+        return False
+
+
 def now() -> str:
     """Return current time in Asia/Bangkok (UTC+7) formatted as string."""
     try:
@@ -312,7 +442,6 @@ def main() -> None:
                     pass
                 analysis = analyze_chart(TICKER, lookback_minutes=240)
                 augmented_message = level["message"] + "\n\n" + f"✅ วิเคราะห์: {analysis.get('summary_th', '')} (score={analysis.get('score')})"
-
                 sent = send_discord_alert(
                     args.webhook_url,
                     key,
@@ -323,6 +452,11 @@ def main() -> None:
                 )
                 if sent:
                     triggered.add(key)
+                # Post analysis to analysis webhook if configured
+                try:
+                    send_analysis_if_configured(args.webhook_url, TICKER, analysis)
+                except Exception:
+                    pass
 
             elif not hit and key in triggered:
                 buffer = level["price"] * 0.01
