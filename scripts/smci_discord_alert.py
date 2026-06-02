@@ -22,8 +22,15 @@ import argparse
 import json as _json
 import os
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+try:
+    from zoneinfo import ZoneInfo
+    BKK_TZ = ZoneInfo("Asia/Bangkok")
+except Exception:
+    BKK_TZ = timezone(timedelta(hours=7))
 from pathlib import Path
+from datetime import datetime
+from scripts.alerts_utils import append_price_point, analyze_chart
 
 import requests
 
@@ -178,7 +185,11 @@ def send_discord_alert(
 
 
 def now() -> str:
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    """Return current time in Asia/Bangkok (UTC+7) formatted as string."""
+    try:
+        return datetime.now(BKK_TZ).strftime("%Y-%m-%d %H:%M:%S %z")
+    except Exception:
+        return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
 def send_startup_message(webhook_url: str, price: float) -> None:
@@ -264,6 +275,10 @@ def main() -> None:
     price, session = get_price_with_session(TICKER, args.finnhub_key)
     if price:
         print(f"[{now()}] ราคาเริ่มต้น: ${price:.2f} [{session}]")
+        try:
+            append_price_point(TICKER, datetime.now(), price)
+        except Exception:
+            pass
         send_startup_message(args.webhook_url, price)
         last_price = price
     else:
@@ -291,10 +306,17 @@ def main() -> None:
 
             if hit and key not in triggered:
                 print(f"[{now()}] 🔔 ALERT: {key} @ ${price:.2f} [{session}]")
+                try:
+                    append_price_point(TICKER, datetime.now(), price)
+                except Exception:
+                    pass
+                analysis = analyze_chart(TICKER, lookback_minutes=240)
+                augmented_message = level["message"] + "\n\n" + f"✅ วิเคราะห์: {analysis.get('summary_th', '')} (score={analysis.get('score')})"
+
                 sent = send_discord_alert(
                     args.webhook_url,
                     key,
-                    level["message"],
+                    augmented_message,
                     price,
                     level["color"],
                     session,

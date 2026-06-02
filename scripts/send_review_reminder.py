@@ -13,7 +13,12 @@ import argparse
 import json
 import os
 import subprocess
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+try:
+    from zoneinfo import ZoneInfo
+    BKK_TZ = ZoneInfo("Asia/Bangkok")
+except Exception:
+    BKK_TZ = timezone(timedelta(hours=7))
 from pathlib import Path
 
 import requests
@@ -101,7 +106,10 @@ def get_upcoming_events(days_ahead: int = 14) -> list[dict]:
 
 
 def now_th() -> str:
-    return datetime.now().strftime("%Y-%m-%d %H:%M")
+    try:
+        return datetime.now(BKK_TZ).strftime("%Y-%m-%d %H:%M %z")
+    except Exception:
+        return datetime.now().strftime("%Y-%m-%d %H:%M")
 
 
 def _build_levels_embed(cfg: dict) -> dict | None:
@@ -183,7 +191,7 @@ def send_reminder(webhook_url: str, reason: str, detail: str) -> None:
         event_lines.append(f"`{ev['date']}`  {ev['event']}  —  {tag}")
 
     last_update = get_last_commit_info()
-    timestamp = datetime.now().strftime("%d %b %Y  %H:%M")
+    timestamp = datetime.now(BKK_TZ).strftime("%d %b %Y  %H:%M %z")
 
     fields: list[dict] = [
         {
