@@ -495,6 +495,16 @@ def main() -> None:
                             f"\n\n⚠️ Level not reached: current price ${price:.2f} < level ${level['price']:.2f}."
                             f"\nSuggested: wait for breakout above ${level['price']:.2f} or consider buy-on-pullback if analysis recommends BUY (analysis: {action} conf={conf:.2f})."
                         )
+
+                    # Additionally, if there are lower BUY (direction=='below') levels that are now well behind current price,
+                    # include a short suggestion for completeness (helps when price moved far above support zones).
+                    missed = [lv for lv in ALERT_LEVELS if lv.get('direction') == 'below' and price > lv.get('price', 0) * 1.01]
+                    if missed:
+                        parts = []
+                        for mv in missed:
+                            parts.append(f"{mv.get('label')} @ ${mv.get('price'):.2f}")
+                        miss_text = ", ".join(parts)
+                        extra += f"\n\n⚠️ Missed lower buy zones: {miss_text}.\nConsider SHORT or wait for pullback to these levels before buying."
                 except Exception:
                     extra = ""
 
