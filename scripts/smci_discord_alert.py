@@ -241,12 +241,24 @@ def send_analysis_if_configured(base_webhook: str, symbol: str, analysis: dict):
     if not analysis_webhook:
         return False
 
+    if not analysis:
+        return False
+
     action, conf, reasons = recommend_action_from_analysis(analysis)
-    # Only notify on actionable signals (BUY or SELL); avoid repeated notifications
+
+    # Only notify on actionable signals (BUY or SELL)
     if action == 'HOLD':
         return False
 
-    # persist last action to avoid repeated alerts
+    # minimal confidence threshold (env configurable)
+    try:
+        min_conf = float(os.environ.get('ANALYSIS_MIN_CONFIDENCE', '0.6'))
+    except Exception:
+        min_conf = 0.6
+    if conf < min_conf:
+        return False
+
+    # persist last action to avoid repeated alerts + cooldown
     cache_dir = Path(__file__).parent.parent / 'state'
     cache_dir.mkdir(parents=True, exist_ok=True)
     cache_file = cache_dir / f'recommendation_{symbol}.json'
@@ -257,8 +269,15 @@ def send_analysis_if_configured(base_webhook: str, symbol: str, analysis: dict):
     except Exception:
         last = {}
 
-    if last.get('action') == action:
-        # already sent same recommendation previously; skip
+    cooldown_min = int(os.environ.get('ANALYSIS_COOLDOWN_MINUTES', '60'))
+    now_ts = time.time()
+    last_ts = 0.0
+    try:
+        last_ts = float(last.get('ts', 0.0))
+    except Exception:
+        last_ts = 0.0
+
+    if last.get('action') == action and (now_ts - last_ts) < (cooldown_min * 60):
         return False
 
     # Build 'why this will beat market' message from analysis
@@ -305,7 +324,7 @@ def send_analysis_if_configured(base_webhook: str, symbol: str, analysis: dict):
         resp.raise_for_status()
         # record last action
         try:
-            cache_file.write_text(_json.dumps({'action': action, 'confidence': conf, 'ts': now()}))
+            cache_file.write_text(_json.dumps({'action': action, 'confidence': conf, 'ts': now_ts}))
         except Exception:
             pass
         return True
@@ -426,6 +445,21 @@ def main() -> None:
         if price != last_price:
             print(f"[{now()}] {TICKER}: ${price:.2f} [{session}]")
             last_price = price
+
+            # Cache the price point for rolling analysis and run lightweight analysis every price change
+            try:
+                append_price_point(TICKER, datetime.now(), price)
+            except Exception:
+                pass
+            try:
+                analysis = analyze_chart(TICKER, lookback_minutes=240)
+                # Send analysis to analysis webhook if configured (only sends on BUY/SELL and dedupes)
+                try:
+                    send_analysis_if_configured(None, TICKER, analysis)
+                except Exception:
+                    pass
+            except Exception:
+                analysis = None
 
         for level in ALERT_LEVELS:
             key = level["label"]
