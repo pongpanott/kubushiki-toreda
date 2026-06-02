@@ -253,7 +253,7 @@ def send_analysis_if_configured(base_webhook: str, symbol: str, analysis: dict):
     last = {}
     try:
         if cache_file.exists():
-            last = json.loads(cache_file.read_text())
+            last = _json.loads(cache_file.read_text())
     except Exception:
         last = {}
 
@@ -305,7 +305,7 @@ def send_analysis_if_configured(base_webhook: str, symbol: str, analysis: dict):
         resp.raise_for_status()
         # record last action
         try:
-            cache_file.write_text(json.dumps({'action': action, 'confidence': conf, 'ts': now()}))
+            cache_file.write_text(_json.dumps({'action': action, 'confidence': conf, 'ts': now()}))
         except Exception:
             pass
         return True

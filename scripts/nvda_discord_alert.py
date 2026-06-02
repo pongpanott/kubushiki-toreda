@@ -237,70 +237,71 @@ def send_analysis_if_configured(base_webhook: str, symbol: str, analysis: dict):
     if not analysis_webhook:
         return False
     action, conf, reasons = recommend_action_from_analysis(analysis)
-        # Only notify for BUY/SELL
-        if action == 'HOLD':
-            return False
 
-        # Persist last action to avoid duplicates
-        cache_dir = Path(__file__).parent.parent / 'state'
-        cache_dir.mkdir(parents=True, exist_ok=True)
-        cache_file = cache_dir / f'recommendation_{symbol}.json'
+    # Only notify for BUY/SELL
+    if action == 'HOLD':
+        return False
+
+    # Persist last action to avoid duplicates
+    cache_dir = Path(__file__).parent.parent / 'state'
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_file = cache_dir / f'recommendation_{symbol}.json'
+    last = {}
+    try:
+        if cache_file.exists():
+            last = _json.loads(cache_file.read_text())
+    except Exception:
         last = {}
+    if last.get('action') == action:
+        return False
+
+    score = analysis.get('score')
+    summary = analysis.get('summary_th', '')
+    metrics = analysis.get('metrics', {})
+    recent_pct = metrics.get('recent_return_pct')
+    edge_parts = []
+    if 'ma50' in metrics and 'ma200' in metrics and metrics.get('ma50') and metrics.get('ma200'):
+        if metrics['ma50'] > metrics['ma200']:
+            edge_parts.append('Uptrend: MA50 > MA200')
+        else:
+            edge_parts.append('Downtrend: MA50 <= MA200')
+    if recent_pct is not None:
+        edge_parts.append(f'Momentum: {recent_pct:+.2f}% over lookback')
+    rsi = metrics.get('rsi')
+    if rsi is not None:
+        if rsi < 30:
+            edge_parts.append('RSI oversold (possible rebound)')
+        elif rsi > 70:
+            edge_parts.append('RSI overbought (risk of pullback)')
+
+    reasons_text = reasons or summary or 'Technical alignment'
+    edge_text = '; '.join(edge_parts) or 'Price-action signal'
+    description = (
+        f"Recommendation: **{action}** (confidence {conf:.2f})\n"
+        f"Score: {score} · {reasons_text}\n\n"
+        f"Why this can beat the market: {edge_text}\n\n"
+        f"Summary: {summary}"
+    )
+
+    embed = {
+        'title': f'{symbol} — Trade Idea',
+        'description': description,
+        'fields': [
+            {'name': 'Confidence', 'value': f"{conf:.2f}", 'inline': True},
+        ],
+        'color': 3066993 if action == 'BUY' else 15105570,
+    }
+    try:
+        resp = requests.post(analysis_webhook, json={'embeds': [embed]}, timeout=10)
+        resp.raise_for_status()
         try:
-            if cache_file.exists():
-                last = json.loads(cache_file.read_text())
+            cache_file.write_text(_json.dumps({'action': action, 'confidence': conf, 'ts': now()}))
         except Exception:
-            last = {}
-        if last.get('action') == action:
-            return False
-
-        score = analysis.get('score')
-        summary = analysis.get('summary_th', '')
-        metrics = analysis.get('metrics', {})
-        recent_pct = metrics.get('recent_return_pct')
-        edge_parts = []
-        if 'ma50' in metrics and 'ma200' in metrics and metrics.get('ma50') and metrics.get('ma200'):
-            if metrics['ma50'] > metrics['ma200']:
-                edge_parts.append('Uptrend: MA50 > MA200')
-            else:
-                edge_parts.append('Downtrend: MA50 <= MA200')
-        if recent_pct is not None:
-            edge_parts.append(f'Momentum: {recent_pct:+.2f}% over lookback')
-        rsi = metrics.get('rsi')
-        if rsi is not None:
-            if rsi < 30:
-                edge_parts.append('RSI oversold (possible rebound)')
-            elif rsi > 70:
-                edge_parts.append('RSI overbought (risk of pullback)')
-
-        reasons_text = reasons or summary or 'Technical alignment'
-        edge_text = '; '.join(edge_parts) or 'Price-action signal'
-        description = (
-            f"Recommendation: **{action}** (confidence {conf:.2f})\n"
-            f"Score: {score} · {reasons_text}\n\n"
-            f"Why this can beat the market: {edge_text}\n\n"
-            f"Summary: {summary}"
-        )
-
-        embed = {
-            'title': f'{symbol} — Trade Idea',
-            'description': description,
-            'fields': [
-                {'name': 'Confidence', 'value': f"{conf:.2f}", 'inline': True},
-            ],
-            'color': 3066993 if action == 'BUY' else 15105570,
-        }
-        try:
-            resp = requests.post(analysis_webhook, json={'embeds': [embed]}, timeout=10)
-            resp.raise_for_status()
-            try:
-                cache_file.write_text(json.dumps({'action': action, 'confidence': conf, 'ts': now()}))
-            except Exception:
-                pass
-            return True
-        except Exception as e:
-            print(f"[{now()}] Analysis post failed: {e}")
-            return False
+            pass
+        return True
+    except Exception as e:
+        print(f"[{now()}] Analysis post failed: {e}")
+        return False
 
 
 def now() -> str:
