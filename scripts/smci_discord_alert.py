@@ -37,7 +37,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from scripts.alerts_utils import append_price_point, analyze_chart
+from scripts.alerts_utils import append_price_point, analyze_chart, recommend_trade_from_analysis, suggest_static_update_if_needed
 
 import requests
 
@@ -103,6 +103,43 @@ _HARDCODED_ALERT_LEVELS = [
 
 TICKER = "SMCI"
 CHECK_INTERVAL_SECONDS = 60
+_DYNAMIC_UPDATE_COOLDOWN_SEC = int(os.environ.get("DYNAMIC_LEVELS_UPDATE_COOLDOWN_SEC", "900"))
+_DYNAMIC_LEVEL_CHANGE_PCT = float(os.environ.get("DYNAMIC_LEVEL_CHANGE_PCT", "0.003"))
+
+
+def _extract_dynamic_plan(analysis: dict | None) -> dict | None:
+    if not analysis:
+        return None
+    metrics = analysis.get("metrics", {})
+    plan = metrics.get("dynamic_levels") or {}
+    required = ("buy_price", "sell_price", "stop_loss", "take_profit")
+    if not all(k in plan for k in required):
+        return None
+    return plan
+
+
+def _plan_change_ratio(old_plan: dict | None, new_plan: dict | None) -> float:
+    if not old_plan or not new_plan:
+        return 1.0
+    keys = ("buy_price", "sell_price", "stop_loss", "take_profit")
+    ratios: list[float] = []
+    for key in keys:
+        old_val = float(old_plan.get(key, 0.0) or 0.0)
+        new_val = float(new_plan.get(key, 0.0) or 0.0)
+        if old_val <= 0:
+            continue
+        ratios.append(abs(new_val - old_val) / old_val)
+    return max(ratios) if ratios else 0.0
+
+
+def _dynamic_plan_text(plan: dict | None) -> str:
+    if not plan:
+        return "ไม่พบข้อมูล dynamic levels เพียงพอ"
+    return (
+        f"BUY: ${plan['buy_price']:.2f} | SELL: ${plan['sell_price']:.2f}"
+        f"\nSTOP: ${plan['stop_loss']:.2f} | TARGET: ${plan['take_profit']:.2f}"
+        f"\nSUPPORT/RESIST: ${plan.get('support', 0.0):.2f}/${plan.get('resistance', 0.0):.2f}"
+    )
 
 
 def _load_alert_levels() -> list[dict]:
@@ -341,7 +378,7 @@ def now() -> str:
         return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
-def send_startup_message(webhook_url: str, price: float) -> None:
+def send_startup_message(webhook_url: str, price: float, analysis: dict | None = None) -> None:
     """Send startup confirmation with dynamically loaded levels."""
     above = sorted(
         [lv for lv in ALERT_LEVELS if lv["direction"] == "above"],
@@ -366,7 +403,9 @@ def send_startup_message(webhook_url: str, price: float) -> None:
         f"━━━━━━━━━━━━  📈 TARGETS  ━━━━━━━━━━━━\n"
         f"{fmt_levels(above)}\n\n"
         f"━━━━━━━━━━━  📉 SUPPORT / STOP  ━━━━━━━━━━━\n"
-        f"{fmt_levels(below)}"
+        f"{fmt_levels(below)}\n\n"
+        f"━━━━━━━━━━━  🧭 DYNAMIC (1m)  ━━━━━━━━━━━\n"
+        f"{_dynamic_plan_text(_extract_dynamic_plan(analysis))}"
     )
 
     embed = {
@@ -415,6 +454,8 @@ def main() -> None:
 
     triggered: set[str] = set()
     last_price: float | None = None
+    last_dynamic_plan: dict | None = None
+    last_dynamic_update_ts = 0.0
     start_time = time.monotonic()
     deadline = start_time + args.timeout_minutes * 60 if args.timeout_minutes > 0 else None
 
@@ -428,7 +469,13 @@ def main() -> None:
             append_price_point(TICKER, datetime.now(), price)
         except Exception:
             pass
-        send_startup_message(args.webhook_url, price)
+        initial_analysis = None
+        try:
+            initial_analysis = analyze_chart(TICKER, lookback_minutes=240)
+            last_dynamic_plan = _extract_dynamic_plan(initial_analysis)
+        except Exception:
+            initial_analysis = None
+        send_startup_message(args.webhook_url, price, initial_analysis)
         last_price = price
     else:
         print(f"[{now()}] ⚠️ ดึงราคาครั้งแรกไม่ได้ รอรอบถัดไป...")
@@ -442,6 +489,8 @@ def main() -> None:
         if price is None:
             continue
 
+        prev_price = last_price
+
         if price != last_price:
             print(f"[{now()}] {TICKER}: ${price:.2f} [{session}]")
             last_price = price
@@ -453,6 +502,29 @@ def main() -> None:
                 pass
             try:
                 analysis = analyze_chart(TICKER, lookback_minutes=240)
+                dynamic_plan = _extract_dynamic_plan(analysis)
+                trade_rec = recommend_trade_from_analysis(analysis, current_price=price)
+
+                # Push refreshed BUY/SELL/STOP/TARGET when dynamic levels move enough.
+                change_ratio = _plan_change_ratio(last_dynamic_plan, dynamic_plan)
+                now_ts = time.time()
+                can_push_update = (now_ts - last_dynamic_update_ts) >= _DYNAMIC_UPDATE_COOLDOWN_SEC
+                if dynamic_plan and can_push_update and change_ratio >= _DYNAMIC_LEVEL_CHANGE_PCT:
+                    dynamic_msg = (
+                        "แผนราคาปรับล่าสุดจากกราฟ 1 นาที (ไม่ยึดระดับเดิม):\n"
+                        f"{_dynamic_plan_text(dynamic_plan)}"
+                    )
+                    if send_discord_alert(
+                        args.webhook_url,
+                        "🧭 SMCI Dynamic Levels Update (1m)",
+                        dynamic_msg,
+                        price,
+                        0x3498DB,
+                        session,
+                    ):
+                        last_dynamic_update_ts = now_ts
+                        last_dynamic_plan = dynamic_plan
+
                 # Send analysis to analysis webhook if configured (only sends on BUY/SELL and dedupes)
                 try:
                     send_analysis_if_configured(None, TICKER, analysis)
@@ -463,12 +535,21 @@ def main() -> None:
 
         for level in ALERT_LEVELS:
             key = level["label"]
+            level_price = level["price"]
+            direction = level["direction"]
             hit = (
-                (level["direction"] == "below" and price <= level["price"])
-                or (level["direction"] == "above" and price >= level["price"])
+                (direction == "below" and price <= level_price)
+                or (direction == "above" and price >= level_price)
+            )
+            crossed = (
+                prev_price is not None
+                and (
+                    (direction == "below" and prev_price > level_price >= price)
+                    or (direction == "above" and prev_price < level_price <= price)
+                )
             )
 
-            if hit and key not in triggered:
+            if crossed and key not in triggered:
                 print(f"[{now()}] 🔔 ALERT: {key} @ ${price:.2f} [{session}]")
                 try:
                     append_price_point(TICKER, datetime.now(), price)
@@ -482,6 +563,7 @@ def main() -> None:
                     action, conf, reasons = recommend_action_from_analysis(analysis)
                 except Exception:
                     action, conf, reasons = 'HOLD', 0.0, ''
+                dynamic_plan = _extract_dynamic_plan(analysis)
                 try:
                     if level.get("direction") == "below" and price > level.get("price", 0):
                         extra = (
@@ -495,7 +577,13 @@ def main() -> None:
                         )
 
                     # Also surface any lower buy zones that were missed (price moved >1% above them)
-                    missed = [lv for lv in ALERT_LEVELS if lv.get('direction') == 'below' and price > lv.get('price', 0) * 1.01]
+                    missed = [
+                        lv
+                        for lv in ALERT_LEVELS
+                        if lv.get('direction') == 'below'
+                        and 'BUY' in str(lv.get('label', '')).upper()
+                        and price > lv.get('price', 0) * 1.01
+                    ]
                     if missed:
                         parts = [f"{mv.get('label')} @ ${mv.get('price'):.2f}" for mv in missed]
                         miss_text = ", ".join(parts)
@@ -503,7 +591,48 @@ def main() -> None:
                 except Exception:
                     extra = ""
 
-                augmented_message = level["message"] + extra + "\n\n" + f"✅ วิเคราะห์: {analysis.get('summary_th', '')} (score={analysis.get('score')})"
+                # Soft static-level suggestion
+                try:
+                    suggestion = suggest_static_update_if_needed(TICKER, level, analysis)
+                    if suggestion:
+                        sug_text = (
+                            f"Suggested static-level update for {suggestion['ticker']}\n"
+                            f"Level: {level.get('label')} @ ${level.get('price'):.2f}\n"
+                            f"Reason: {suggestion['reason']}\n"
+                            f"Created: {suggestion['created_at']}\n"
+                            f"(SOFT suggestion — manual review required)"
+                        )
+                        send_discord_alert(args.webhook_url, "⚙️ Suggest Update Static Level", sug_text, price, 0x95A5A6, session)
+                except Exception:
+                    pass
+
+                # Build concise recommendation text
+                rec_parts = []
+                try:
+                    if trade_rec.get('buy_now') is not None:
+                        rec_parts.append(f"ซื้อ: ${trade_rec['buy_now']:.2f} (ตอนนี้)")
+                    elif trade_rec.get('buy_on_pullback') is not None:
+                        rec_parts.append(f"เข้าซื้อเมื่อ pullback: ${trade_rec['buy_on_pullback']:.2f}")
+                    if trade_rec.get('sell_now') is not None:
+                        rec_parts.append(f"ขาย/เป้า: ${trade_rec['sell_now']:.2f}")
+                    if trade_rec.get('stop_loss') is not None:
+                        rec_parts.append(f"Stop-loss: ${trade_rec['stop_loss']:.2f}")
+                    if trade_rec.get('reason'):
+                        rec_parts.append(f"เหตุผล: {trade_rec['reason']}")
+                except Exception:
+                    rec_parts = []
+
+                rec_text = " | ".join(rec_parts) if rec_parts else ""
+
+                augmented_message = (
+                    level["message"]
+                    + extra
+                    + "\n\n"
+                    + f"✅ วิเคราะห์: {analysis.get('summary_th', '')} (score={analysis.get('score')})"
+                    + "\n"
+                    + f"🧭 Dynamic: {_dynamic_plan_text(dynamic_plan)}"
+                    + ("\n\n🔎 ข้อเสนอเชิงปฏิบัติ: " + rec_text if rec_text else "")
+                )
                 sent = send_discord_alert(
                     args.webhook_url,
                     key,
@@ -521,10 +650,10 @@ def main() -> None:
                     pass
 
             elif not hit and key in triggered:
-                buffer = level["price"] * 0.01
+                buffer = level_price * 0.01
                 far_enough = (
-                    (level["direction"] == "below" and price > level["price"] + buffer)
-                    or (level["direction"] == "above" and price < level["price"] - buffer)
+                    (direction == "below" and price > level_price + buffer)
+                    or (direction == "above" and price < level_price - buffer)
                 )
                 if far_enough:
                     triggered.discard(key)
