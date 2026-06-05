@@ -38,6 +38,15 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from scripts.alerts_utils import append_price_point, analyze_chart, recommend_trade_from_analysis, suggest_static_update_if_needed
+from scripts.discord_alert_common import (
+    now_bkk as _common_now,
+    get_price_with_session as _common_get_price_with_session,
+    send_discord_alert as _common_send_discord_alert,
+    extract_dynamic_plan as _common_extract_dynamic_plan,
+    plan_change_ratio as _common_plan_change_ratio,
+    dynamic_plan_text as _common_dynamic_plan_text,
+    dynamic_plan_playbook as _common_dynamic_plan_playbook,
+)
 
 import requests
 
@@ -108,38 +117,19 @@ _DYNAMIC_LEVEL_CHANGE_PCT = float(os.environ.get("DYNAMIC_LEVEL_CHANGE_PCT", "0.
 
 
 def _extract_dynamic_plan(analysis: dict | None) -> dict | None:
-    if not analysis:
-        return None
-    metrics = analysis.get("metrics", {})
-    plan = metrics.get("dynamic_levels") or {}
-    required = ("buy_price", "sell_price", "stop_loss", "take_profit")
-    if not all(k in plan for k in required):
-        return None
-    return plan
+    return _common_extract_dynamic_plan(analysis)
 
 
 def _plan_change_ratio(old_plan: dict | None, new_plan: dict | None) -> float:
-    if not old_plan or not new_plan:
-        return 1.0
-    keys = ("buy_price", "sell_price", "stop_loss", "take_profit")
-    ratios: list[float] = []
-    for key in keys:
-        old_val = float(old_plan.get(key, 0.0) or 0.0)
-        new_val = float(new_plan.get(key, 0.0) or 0.0)
-        if old_val <= 0:
-            continue
-        ratios.append(abs(new_val - old_val) / old_val)
-    return max(ratios) if ratios else 0.0
+    return _common_plan_change_ratio(old_plan, new_plan)
 
 
 def _dynamic_plan_text(plan: dict | None) -> str:
-    if not plan:
-        return "ไม่พบข้อมูล dynamic levels เพียงพอ"
-    return (
-        f"BUY: ${plan['buy_price']:.2f} | SELL: ${plan['sell_price']:.2f}"
-        f"\nSTOP: ${plan['stop_loss']:.2f} | TARGET: ${plan['take_profit']:.2f}"
-        f"\nSUPPORT/RESIST: ${plan.get('support', 0.0):.2f}/${plan.get('resistance', 0.0):.2f}"
-    )
+    return _common_dynamic_plan_text(plan)
+
+
+def _dynamic_plan_playbook(plan: dict | None, current_price: float, analysis: dict | None = None) -> str:
+    return _common_dynamic_plan_playbook(plan, current_price, analysis)
 
 
 def _load_alert_levels() -> list[dict]:
@@ -167,65 +157,27 @@ ALERT_LEVELS = _load_alert_levels()
 
 
 def get_price_with_session(ticker: str, finnhub_key: str) -> tuple[float | None, str]:
-    """Fetch real-time price from Finnhub and detect trading session."""
-    try:
-        resp = requests.get(
-            FINNHUB_QUOTE_URL,
-            params={"symbol": ticker, "token": finnhub_key},
-            timeout=10,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        price = data.get("c")
-        if not price:
-            return None, "N/A"
-
-        now_utc = datetime.now(timezone.utc)
-        hour_utc = now_utc.hour + now_utc.minute / 60
-        is_weekday = now_utc.weekday() < 5
-
-        if not is_weekday:
-            session = "Weekend"
-        elif 8.0 <= hour_utc < 13.5:
-            session = "Pre-Market"
-        elif 13.5 <= hour_utc < 20.0:
-            session = "Regular"
-        elif 20.0 <= hour_utc < 24.0:
-            session = "After-Hours"
-        else:
-            session = "Closed"
-
-        return float(price), session
-    except Exception as e:
-        print(f"[{now()}] Error fetching price: {e}")
-        return None, "N/A"
+    price, session = _common_get_price_with_session(ticker, finnhub_key, FINNHUB_QUOTE_URL)
+    if price is None:
+        print(f"[{now()}] Error fetching price")
+    return price, session
 
 
 def send_discord_alert(
     webhook_url: str, label: str, message: str, price: float, color: int, session: str = ""
 ) -> bool:
-    """Send a rich embed message to Discord webhook."""
-    description = (
-        f"{message}\n\n"
-        f"─────────────────────────────────────\n"
-        f"💵 **ราคา** 　`${price:.2f}`　　"
-        f"📊 **Session** 　`{session or '—'}`\n"
-        f"🕐 **เวลา (TH)** 　`{now()}`"
+    sent = _common_send_discord_alert(
+        webhook_url,
+        label,
+        message,
+        price,
+        color,
+        session,
+        footer_text="SMCI Alert Bot  •  claude-trading-skills",
     )
-    embed = {
-        "title": label,
-        "description": description,
-        "color": color,
-        "footer": {"text": "SMCI Alert Bot  •  claude-trading-skills"},
-    }
-    payload = {"embeds": [embed]}
-    try:
-        resp = requests.post(webhook_url, json=payload, timeout=10)
-        resp.raise_for_status()
-        return True
-    except requests.RequestException as e:
-        print(f"[{now()}] Discord send failed: {e}")
-        return False
+    if not sent:
+        print(f"[{now()}] Discord send failed")
+    return sent
 
 
 def recommend_action_from_analysis(analysis: dict) -> tuple[str, float, str]:
@@ -371,11 +323,7 @@ def send_analysis_if_configured(base_webhook: str, symbol: str, analysis: dict):
 
 
 def now() -> str:
-    """Return current time in Asia/Bangkok (UTC+7) formatted as string."""
-    try:
-        return datetime.now(BKK_TZ).strftime("%Y-%m-%d %H:%M:%S %z")
-    except Exception:
-        return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    return _common_now()
 
 
 def send_startup_message(webhook_url: str, price: float, analysis: dict | None = None) -> None:
@@ -511,8 +459,8 @@ def main() -> None:
                 can_push_update = (now_ts - last_dynamic_update_ts) >= _DYNAMIC_UPDATE_COOLDOWN_SEC
                 if dynamic_plan and can_push_update and change_ratio >= _DYNAMIC_LEVEL_CHANGE_PCT:
                     dynamic_msg = (
-                        "แผนราคาปรับล่าสุดจากกราฟ 1 นาที (ไม่ยึดระดับเดิม):\n"
-                        f"{_dynamic_plan_text(dynamic_plan)}"
+                        "แผนราคาปรับล่าสุดจากกราฟ 1 นาที (อ่านง่ายแบบ actionable):\n\n"
+                        f"{_dynamic_plan_playbook(dynamic_plan, price, analysis)}"
                     )
                     if send_discord_alert(
                         args.webhook_url,
@@ -631,6 +579,7 @@ def main() -> None:
                     + f"✅ วิเคราะห์: {analysis.get('summary_th', '')} (score={analysis.get('score')})"
                     + "\n"
                     + f"🧭 Dynamic: {_dynamic_plan_text(dynamic_plan)}"
+                    + ("\n\n" + _dynamic_plan_playbook(dynamic_plan, price, analysis) if dynamic_plan else "")
                     + ("\n\n🔎 ข้อเสนอเชิงปฏิบัติ: " + rec_text if rec_text else "")
                 )
                 sent = send_discord_alert(

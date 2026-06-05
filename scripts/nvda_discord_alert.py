@@ -37,6 +37,24 @@ try:
 except Exception:
     BKK_TZ = timezone(timedelta(hours=7))
 from scripts.alerts_utils import append_price_point, analyze_chart, recommend_trade_from_analysis, suggest_static_update_if_needed
+from scripts.discord_alert_common import (
+    now_bkk as _common_now,
+    get_price_with_session as _common_get_price_with_session,
+    send_discord_alert as _common_send_discord_alert,
+    extract_dynamic_plan as _common_extract_dynamic_plan,
+    plan_change_ratio as _common_plan_change_ratio,
+    dynamic_plan_text as _common_dynamic_plan_text,
+    dynamic_plan_playbook as _common_dynamic_plan_playbook,
+)
+from scripts.discord_alert_common import (
+    now_bkk as _common_now,
+    get_price_with_session as _common_get_price_with_session,
+    send_discord_alert as _common_send_discord_alert,
+    extract_dynamic_plan as _common_extract_dynamic_plan,
+    plan_change_ratio as _common_plan_change_ratio,
+    dynamic_plan_text as _common_dynamic_plan_text,
+    dynamic_plan_playbook as _common_dynamic_plan_playbook,
+)
 
 import requests
 
@@ -100,38 +118,19 @@ _DYNAMIC_LEVEL_CHANGE_PCT = float(os.environ.get("DYNAMIC_LEVEL_CHANGE_PCT", "0.
 
 
 def _extract_dynamic_plan(analysis: dict | None) -> dict | None:
-    if not analysis:
-        return None
-    metrics = analysis.get("metrics", {})
-    plan = metrics.get("dynamic_levels") or {}
-    required = ("buy_price", "sell_price", "stop_loss", "take_profit")
-    if not all(k in plan for k in required):
-        return None
-    return plan
+    return _common_extract_dynamic_plan(analysis)
 
 
 def _plan_change_ratio(old_plan: dict | None, new_plan: dict | None) -> float:
-    if not old_plan or not new_plan:
-        return 1.0
-    keys = ("buy_price", "sell_price", "stop_loss", "take_profit")
-    ratios: list[float] = []
-    for key in keys:
-        old_val = float(old_plan.get(key, 0.0) or 0.0)
-        new_val = float(new_plan.get(key, 0.0) or 0.0)
-        if old_val <= 0:
-            continue
-        ratios.append(abs(new_val - old_val) / old_val)
-    return max(ratios) if ratios else 0.0
+    return _common_plan_change_ratio(old_plan, new_plan)
 
 
 def _dynamic_plan_text(plan: dict | None) -> str:
-    if not plan:
-        return "ไม่พบข้อมูล dynamic levels เพียงพอ"
-    return (
-        f"BUY: ${plan['buy_price']:.2f} | SELL: ${plan['sell_price']:.2f}"
-        f"\nSTOP: ${plan['stop_loss']:.2f} | TARGET: ${plan['take_profit']:.2f}"
-        f"\nSUPPORT/RESIST: ${plan.get('support', 0.0):.2f}/${plan.get('resistance', 0.0):.2f}"
-    )
+    return _common_dynamic_plan_text(plan)
+
+
+def _dynamic_plan_playbook(plan: dict | None, current_price: float, analysis: dict | None = None) -> str:
+    return _common_dynamic_plan_playbook(plan, current_price, analysis)
 
 
 def _load_alert_levels() -> list[dict]:
@@ -159,70 +158,27 @@ ALERT_LEVELS = _load_alert_levels()
 
 
 def get_price_with_session(ticker: str, finnhub_key: str) -> tuple[float | None, str]:
-    """Fetch real-time price from Finnhub and detect trading session."""
-    try:
-        resp = requests.get(
-            FINNHUB_QUOTE_URL,
-            params={"symbol": ticker, "token": finnhub_key},
-            timeout=10,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        price = data.get("c")  # current price (real-time, includes extended hours)
-        if not price:
-            return None, "N/A"
-
-        # Determine session from current UTC time
-        # EDT = UTC-4: pre-market 4:00-9:30 AM ET = 08:00-13:30 UTC
-        #              regular   9:30-16:00 ET    = 13:30-20:00 UTC
-        #              after-hrs 16:00-20:00 ET   = 20:00-00:00 UTC
-        now_utc = datetime.now(timezone.utc)
-        hour_utc = now_utc.hour + now_utc.minute / 60
-        is_weekday = now_utc.weekday() < 5  # 0=Mon, 4=Fri
-
-        if not is_weekday:
-            session = "Weekend"
-        elif 8.0 <= hour_utc < 13.5:
-            session = "Pre-Market"
-        elif 13.5 <= hour_utc < 20.0:
-            session = "Regular"
-        elif 20.0 <= hour_utc < 24.0:
-            session = "After-Hours"
-        else:
-            session = "Closed"
-
-        return float(price), session
-    except Exception as e:
-        print(f"[{now()}] Error fetching price: {e}")
-        return None, "N/A"
+    price, session = _common_get_price_with_session(ticker, finnhub_key, FINNHUB_QUOTE_URL)
+    if price is None:
+        print(f"[{now()}] Error fetching price")
+    return price, session
 
 
 def send_discord_alert(
     webhook_url: str, label: str, message: str, price: float, color: int, session: str = ""
 ) -> bool:
-    """Send a rich embed message to Discord webhook."""
-    description = (
-        f"{message}\n\n"
-        f"─────────────────────────────────────\n"
-        f"💵 **ราคา** 　`${price:.2f}`　　"
-        f"📊 **Session** 　`{session or '—'}`\n"
-        f"🕐 **เวลา (TH)** 　`{now()}`"
+    sent = _common_send_discord_alert(
+        webhook_url,
+        label,
+        message,
+        price,
+        color,
+        session,
+        footer_text="NVDA Alert Bot  •  claude-trading-skills",
     )
-    embed = {
-        "title": label,
-        "description": description,
-        "color": color,
-        "footer": {"text": "NVDA Alert Bot  •  claude-trading-skills"},
-    }
-    payload = {"embeds": [embed]}
-    try:
-        # If analysis available in payload embed fields already, keep it.
-        resp = requests.post(webhook_url, json=payload, timeout=10)
-        resp.raise_for_status()
-        return True
-    except requests.RequestException as e:
-        print(f"[{now()}] Discord send failed: {e}")
-        return False
+    if not sent:
+        print(f"[{now()}] Discord send failed")
+    return sent
 
 
 def recommend_action_from_analysis(analysis: dict) -> tuple[str, float, str]:
@@ -360,12 +316,205 @@ def send_analysis_if_configured(base_webhook: str, symbol: str, analysis: dict):
 
 
 def now() -> str:
-    """Return current time in Asia/Bangkok (UTC+7) formatted as string."""
+    return _common_now()
+
+
+# ---------------------------------------------------------------------------
+# Trade-plan one-shot mode (--trade-plan)
+# Uses Finnhub for real-time price, yfinance for news, analyze_chart for levels
+# ---------------------------------------------------------------------------
+
+def _fetch_yfinance_news_sentiment(ticker: str, max_news: int = 6) -> tuple[list[dict], str]:
+    """Fetch latest news via yfinance and return (news_list, sentiment_summary).
+
+    Sentiment is a simple keyword scan: counts bullish vs bearish headlines.
+    Returns a plain list so the caller can format it however it wants.
+    """
     try:
-        return datetime.now(BKK_TZ).strftime("%Y-%m-%d %H:%M:%S %z")
+        import yfinance as yf
+        yf_ticker = yf.Ticker(ticker)
+        raw_news = yf_ticker.news or []
     except Exception:
-        # Fallback to naive local time if timezone handling fails
-        return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        return [], "ดึงข่าวไม่ได้"
+
+    BULLISH_WORDS = {"surge", "rally", "beat", "record", "high", "jump", "soar", "up",
+                     "strong", "growth", "buy", "upgrade", "breakout", "bull", "gain"}
+    BEARISH_WORDS = {"drop", "fall", "miss", "low", "down", "sell", "downgrade", "bear",
+                     "loss", "cut", "warning", "risk", "decline", "weak", "crash", "sink"}
+
+    news_items: list[dict] = []
+    bull, bear = 0, 0
+    for n in raw_news[:max_news]:
+        c = n.get("content", {})
+        title = c.get("title") or n.get("title", "")
+        pub = (c.get("pubDate") or "")[:16]
+        prov = c.get("provider", {})
+        src = prov.get("displayName", "") if isinstance(prov, dict) else ""
+        words = set(title.lower().split())
+        if words & BULLISH_WORDS:
+            bull += 1
+            tone = "📈"
+        elif words & BEARISH_WORDS:
+            bear += 1
+            tone = "📉"
+        else:
+            tone = "📰"
+        news_items.append({"title": title, "pub": pub, "src": src, "tone": tone})
+
+    total = bull + bear
+    if total == 0:
+        sentiment = "Neutral — ไม่พบข่าวชัดเจน"
+    elif bull / max(total, 1) >= 0.6:
+        sentiment = f"Bullish 📈 ({bull}/{total} ข่าวบวก) — สนับสนุนการซื้อ"
+    elif bear / max(total, 1) >= 0.6:
+        sentiment = f"Bearish 📉 ({bear}/{total} ข่าวลบ) — ระวังความเสี่ยงขาลง"
+    else:
+        sentiment = f"Mixed ⚖️ (📈{bull} / 📉{bear}) — ตลาดยังไม่ชัดเจน"
+
+    return news_items, sentiment
+
+
+def _build_trade_plan_embed(
+    ticker: str,
+    price: float,
+    session: str,
+    hist_high: float,
+    hist_low: float,
+    analysis: dict,
+    rec: dict,
+    news_items: list[dict],
+    news_sentiment: str,
+) -> dict:
+    """Build a Discord embed dict for the trade-plan notification."""
+    m = analysis.get("metrics", {})
+    dyn = m.get("dynamic_levels", {})
+    rsi = m.get("rsi", 50) or 50
+
+    resistance = dyn.get("resistance", hist_high)
+    vol = dyn.get("volatility", 0.5)
+    support = dyn.get("support", hist_low)
+
+    if rsi < 65:
+        projected_high = resistance + 0.5 * vol
+        sell_at = dyn.get("sell_price", resistance)
+    elif rsi >= 70:
+        projected_high = hist_high
+        sell_at = dyn.get("sell_price", hist_high)
+    else:
+        projected_high = resistance
+        sell_at = dyn.get("sell_price", resistance)
+
+    entry = rec.get("buy_now") or rec.get("buy_on_pullback") or dyn.get("buy_price", price)
+    stop = rec.get("stop_loss") or dyn.get("stop_loss", 0)
+    take_profit = dyn.get("take_profit", 0)
+    rr = round((sell_at - entry) / (entry - stop), 2) if entry and stop and entry > stop else None
+    rr_text = f"1 : {rr}  {'✅' if rr and rr >= 1.5 else '⚠️'}" if rr else "N/A"
+
+    # Scenario guidance text
+    if price < dyn.get("buy_price", price):
+        scenario = "ราคาอยู่ในโซนซื้อแล้ว — เข้า market order ได้"
+    elif price < resistance:
+        scenario = f"รอ pullback ${entry:.2f}–${support:.2f} หรือทะลุ ${resistance:.2f} ค่อยเข้า"
+    else:
+        scenario = f"ราคาชน resistance แล้ว — รอ pullback ก่อน"
+
+    # Color: green if score >= 55, yellow if 45-54, red below
+    score = analysis.get("score", 50)
+    if score >= 55:
+        color = 0x2ECC71   # green
+    elif score >= 45:
+        color = 0xF39C12   # orange
+    else:
+        color = 0xE74C3C   # red
+
+    # News lines (max 5)
+    news_lines = "\n".join(
+        f"{n['tone']} `{n['pub']}` **{n['src']}** — {n['title'][:80]}"
+        for n in news_items[:5]
+    ) or "ไม่มีข่าว"
+
+    description = (
+        f"💵 **ราคา** `${price:.2f}`　　"
+        f"📊 **Session** `{session}`　　"
+        f"🕐 `{now()}`\n"
+        f"**High วันนี้** `${hist_high:.2f}`　**Low** `${hist_low:.2f}`　"
+        f"**RSI14** `{rsi:.1f}`\n\n"
+        f"━━━━━━━━━━  🟢 แผน BUY  ━━━━━━━━━━\n"
+        f"**เข้าซื้อ (ideal)** 　`${entry:.2f}`\n"
+        f"**Stop loss** 　　　`${stop:.2f}`　_(ตัดขาดทุนถ้าต่ำกว่านี้)_\n"
+        f"**เป้าขาย 1st** 　　`${sell_at:.2f}`\n"
+        f"**เป้าขาย 2nd** 　　`${take_profit:.2f}`\n"
+        f"**Risk/Reward** 　　`{rr_text}`\n\n"
+        f"━━━━━━━━━━  📊 Levels  ━━━━━━━━━━\n"
+        f"**Support** `${support:.2f}`　**Resistance** `${resistance:.2f}`\n"
+        f"**คาด intraday high** `~${projected_high:.2f}`\n"
+        f"**Score** `{score}/100`\n\n"
+        f"📋 **แนวทาง:** {scenario}\n\n"
+        f"━━━━━━━━━━  📰 ข่าวล่าสุด  ━━━━━━━━━━\n"
+        f"**Sentiment:** {news_sentiment}\n"
+        f"{news_lines}\n\n"
+        f"⚠️ _วิเคราะห์เชิงเทคนิค ไม่ใช่คำแนะนำการลงทุน_"
+    )
+
+    return {
+        "title": f"📋  {ticker} — Trade Plan ({session})",
+        "description": description,
+        "color": color,
+        "footer": {"text": "NVDA Alert Bot  •  yfinance + Finnhub  •  claude-trading-skills"},
+    }
+
+
+def run_trade_plan(webhook_url: str, finnhub_key: str, ticker: str = "NVDA") -> None:
+    """One-shot: fetch price (Finnhub), news (yfinance), analyze, send Discord embed."""
+    import yfinance as yf
+
+    print(f"[{now()}] 📋 Trade-plan mode for {ticker}")
+
+    # 1. Real-time price from Finnhub
+    price, session = get_price_with_session(ticker, finnhub_key)
+    if not price:
+        print(f"[{now()}] ❌ ดึงราคาจาก Finnhub ไม่ได้")
+        return
+
+    print(f"[{now()}] ราคาล่าสุด: ${price:.2f} [{session}]")
+
+    # 2. Intraday high/low from yfinance (1m bars, today)
+    try:
+        yf_ticker = yf.Ticker(ticker)
+        hist = yf_ticker.history(period="1d", interval="1m")
+        hist_high = float(hist["High"].max()) if not hist.empty else price
+        hist_low = float(hist["Low"].min()) if not hist.empty else price
+        # Write 1m closes to local cache for analyze_chart
+        for ts, row in hist.iterrows():
+            dt = ts.to_pydatetime().astimezone(timezone.utc)
+            try:
+                append_price_point(ticker, dt, float(row["Close"]))
+            except Exception:
+                pass
+        print(f"[{now()}] Wrote {len(hist)} 1m bars to cache. High={hist_high:.2f} Low={hist_low:.2f}")
+    except Exception as e:
+        print(f"[{now()}] yfinance intraday: {e} — using Finnhub price as fallback")
+        hist_high = hist_low = price
+
+    # 3. Technical analysis from cache
+    analysis = analyze_chart(ticker, lookback_minutes=390)
+    rec = recommend_trade_from_analysis(analysis, current_price=price)
+
+    # 4. News + sentiment from yfinance
+    news_items, news_sentiment = _fetch_yfinance_news_sentiment(ticker)
+    print(f"[{now()}] News sentiment: {news_sentiment}")
+
+    # 5. Build and send embed
+    embed = _build_trade_plan_embed(
+        ticker, price, session, hist_high, hist_low,
+        analysis, rec, news_items, news_sentiment,
+    )
+    try:
+        resp = requests.post(webhook_url, json={"embeds": [embed]}, timeout=10)
+        resp.raise_for_status()
+        print(f"[{now()}] ✅ ส่ง trade plan ไปที่ Discord แล้ว")
+    except Exception as e:
+        print(f"[{now()}] ❌ Discord send failed: {e}")
 
 
 def send_startup_message(webhook_url: str, price: float, analysis: dict | None = None) -> None:
@@ -431,6 +580,11 @@ def main() -> None:
         default=0,
         help="หยุดอัตโนมัติหลังกี่นาที (0 = ไม่หยุด, ใช้สำหรับ GitHub Actions)",
     )
+    parser.add_argument(
+        "--trade-plan",
+        action="store_true",
+        help="รันครั้งเดียว: ส่ง trade plan (ราคา Finnhub + ข่าว yfinance) ไปที่ Discord แล้วออก",
+    )
     args = parser.parse_args()
 
     if not args.webhook_url:
@@ -441,6 +595,11 @@ def main() -> None:
         print("❌ ต้องระบุ Finnhub API key")
         print("   ใช้ --finnhub-key หรือ export FINNHUB_API_KEY=...")
         raise SystemExit(1)
+
+    # --- one-shot trade-plan mode ---
+    if args.trade_plan:
+        run_trade_plan(args.webhook_url, args.finnhub_key, TICKER)
+        return
 
     # Track which alerts have already been sent (reset when price moves away)
     triggered: set[str] = set()
@@ -503,8 +662,8 @@ def main() -> None:
                 can_push_update = (now_ts - last_dynamic_update_ts) >= _DYNAMIC_UPDATE_COOLDOWN_SEC
                 if dynamic_plan and can_push_update and change_ratio >= _DYNAMIC_LEVEL_CHANGE_PCT:
                     dynamic_msg = (
-                        "แผนราคาปรับล่าสุดจากกราฟ 1 นาที (ไม่ยึดระดับเดิม):\n"
-                        f"{_dynamic_plan_text(dynamic_plan)}"
+                        "แผนราคาปรับล่าสุดจากกราฟ 1 นาที (อ่านง่ายแบบ actionable):\n\n"
+                        f"{_dynamic_plan_playbook(dynamic_plan, price, analysis)}"
                     )
                     if send_discord_alert(
                         args.webhook_url,
@@ -635,6 +794,7 @@ def main() -> None:
                     + f"✅ วิเคราะห์: {summary} (score={score})"
                     + "\n"
                     + f"🧭 Dynamic: {_dynamic_plan_text(dynamic_plan)}"
+                    + ("\n\n" + _dynamic_plan_playbook(dynamic_plan, price, analysis) if dynamic_plan else "")
                     + ("\n\n🔎 ข้อเสนอเชิงปฏิบัติ: " + rec_text if rec_text else "")
                 )
 
